@@ -8,7 +8,10 @@ from geometry.open3d_import import *
 
 from default_config.masif_opts import masif_opts
 
-def set_params(target_root, masif_db_root: str = "/work/lpdi/users/shxiao/scratch/masif_seed/masif", db_name: str = "masif_oas", masif_app: str = "ppi_search"):
+def set_params(target_root: str, masif_db_root: str = "/work/lpdi/users/shxiao/scratch/masif_seed/masif", db_name: str = "masif_oas", masif_app: str = "ppi_search") -> dict:
+    '''
+    Set the parameters for the mimicry search.
+    '''
     params = {}
     # Directory where the database is located.
     params["masif_db_root"] = masif_db_root
@@ -37,7 +40,7 @@ def set_params(target_root, masif_db_root: str = "/work/lpdi/users/shxiao/scratc
 
     return params
 
-def get_features(params, pdb: str, pid: str, source: bool = True, flip_desc: bool = False):
+def get_features(params: dict, pdb: str, pid: str, source: bool = True, flip_desc: bool = False) -> dict:
     '''
     Load all the features for a given pdb and chain id.
     pdb: PDB code with chain info (e.g., 1a2k_A or 1a2k_A_B)
@@ -86,14 +89,14 @@ def get_features(params, pdb: str, pid: str, source: bool = True, flip_desc: boo
     return all_feats
 
 def surf2atom(
-    point_coords,
+    point_coords: np.ndarray,
     pdb_path: str,
     k: int = 1,
     distance_cutoff: float = 5.0, 
     rsa_cutoff: float = 0.1, 
     exclude_backbone: bool = True,
     dssp_bin_path: str = "/work/lpdi/bin/sequence/dssp"
-    ):
+    ) -> tuple:
     '''
     This function takes the pdb file and the surface point coordinates and returns the closest surface-exposed atoms.
     point_coords: Nx3 numpy array of surface point coordinates
@@ -149,8 +152,8 @@ def surf2atom(
             nearest_atom_ss.append([ss_label[nearest_atoms_idx[i, j]] for j in range(d.shape[1]) if d[i, j] <= distance_cutoff])
             
     return nearest_atom, nearest_atom_ss
-    
-def res2surf(point_coords, pdb_path: str, chain: str, residue: int, atom_name: str, k: int = 1):
+
+def res2surf(point_coords: np.ndarray, pdb_path: str, chain: str, residue: int, atom_name: str, k: int = 1) -> np.ndarray:
     '''
     This function takes the pdb file and the surface point coordinates and returns the closest surface points to a given residue/atom
     
@@ -177,14 +180,14 @@ def res2surf(point_coords, pdb_path: str, chain: str, residue: int, atom_name: s
     return nearest_points_idx
 
 def select_patches(
-    P_all_feats, 
+    P_all_feats: dict,
     downsample_rate: int = 5, 
     iface_cutoff: float = 0.0, 
     min_patch_num: int = 50, 
-    top_iface_percent: float = None, 
+    top_iface_percent: float = 0.0, 
     interface_only: bool = False,
     verbose: bool = True
-):  
+) -> tuple:
     """
     Select patches from the point cloud based on indices and downsample rate.
     P_all_feats: Dictionary containing all features of the point cloud.
@@ -226,7 +229,7 @@ def select_patches(
         print("No points selected. Please check the parameters.")
         return [], [], []
     
-    if top_iface_percent is not None:
+    if top_iface_percent > 0.0:
         top_iface_num = round(top_iface_percent*len(P_all_feats['desc']))
         top_iface_num = max(top_iface_num, min_patch_num)
         top_iface_idx = np.argsort(patch_iface[selected_points_idx])[::-1][:top_iface_num]

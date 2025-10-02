@@ -6,32 +6,48 @@ from utils import *
 from subprocess import Popen, PIPE
 
 def create_parser():
-    parser = argparse.ArgumentParser(description='MaSIF Pipeline for mimicry search.')
-    parser.add_argument('--split_seed_list', type=str, help='List that specify uniprot ID of the proteins to search from.')
-    parser.add_argument('--seed_db_root', type=str, default='/work/lpdi/users/shxiao/masif_seed/masif/', help='Root directory where seed PDB is processed')
-    parser.add_argument('--seed_db', type=str, help='database name where seed PDB is processed')
-    parser.add_argument('--seed_pdb', type=str, help='specify uniprot ID of the proteins to search from.')
-    parser.add_argument('--target_db_root', type=str, default='/work/lpdi/users/shxiao/masif_seed/masif_seed_search', help='Root directory where target PDB is processed')
-    parser.add_argument('--target_db', type=str, default='masif_degron', help='database name where target PDB is processed')
-    parser.add_argument('--target_pdb', type=str, help='Target PDB ID')
-    parser.add_argument('--target_ppi_id', type=str, default='p1', help='Target PPI ID')
-    parser.add_argument('--target_chain', type=str, help='Target PDB Chain ID')
-    parser.add_argument('--target_residue', type=int, help='Target residue ID')
-    parser.add_argument('--target_atom', type=str, help='Target atom name')
-    parser.add_argument('--top_iface_percent', type=float, default=0.02, help='Top interface percent to select points from')
-    parser.add_argument('--downsample', type=int, default=1, help='Downsample rate for the sites on proteome proteins')
-    parser.add_argument('--output_dir', type=str, default='.', help='Output directory')
-    parser.add_argument('--output_postfix', type=str, default='outputs', help='Output postfix')
-    parser.add_argument('--num_points', type=int, default=5, help='Number of nearest points to search')
-    parser.add_argument('--masif_app', type=str, default='ppi_search', help='MaSIF applications: can do ppi_search or site')
-    parser.add_argument('--iface_cutoff', type=float, default=0.0, help='Interface cutoff')
-    parser.add_argument('--interface_only', action='store_true', help='Only align to interfaces in the seed database; this requires the seed database to be protein complexes.')
-    parser.add_argument('--desc_dist_cutoff', type=float, default=1.5, help='Desc dist cutoff')
-    parser.add_argument('--desc_dist_score_cutoff', type=float, default=0.25, help='Desc dist score cutoff. Recommend 30 for masif_app ppi_search and 15 for site.')
-    parser.add_argument('--count_clashes', action='store_true', help='Count clashes')
-    parser.add_argument('--ca_clash_threshold', type=int, default=1, help='CA clash threshold')
-    parser.add_argument('--heavy_atom_clash_threshold', type=int, default=5, help='Clash threshold')
-    return parser
+    p = argparse.ArgumentParser("Simplified MaSIF mimicry search")
+
+    # Database / targets
+    p.add_argument("--seed_db_root", type=str, default="/work/lpdi/users/shxiao/masif_seed/masif/",
+                   help="Root where seed MaSIF DBs live")
+    p.add_argument("--seed_db", type=str, required=True, help="Name of the seed DB to search from")
+
+    p.add_argument("--target_db_root", type=str, default="/work/lpdi/users/shxiao/masif_seed/masif_seed_search",
+                   help="Root where target MaSIF DBs live")
+    p.add_argument("--target_db", type=str, default="masif_degron", help="Target DB name")
+
+    # Which PDBs/chains to use
+    group = p.add_mutually_exclusive_group(required=True)
+    group.add_argument("--seed_pdb", type=str, help="Single seed PDB (format: PDB_ppi_chain or PDB_ppi)")
+    group.add_argument("--split_seed_list", type=str, help="File containing one seed PDB id per line")
+
+    p.add_argument("--target_pdb", type=str, required=True, help="Target PDB identifier (format: PDB_ppi_chain)")
+    p.add_argument("--target_ppi_id", choices=["p1", "p2"], default="p1", help="ppi side of the target to align to")
+    p.add_argument("--target_chain", type=str, required=True, help="Target chain id (single char) for sanity checks")
+
+    # Optional: allow user to specify a target residue/atom/chain to select nearest surface points
+    p.add_argument("--target_residue", type=int, help="Target residue number (integer). If provided with --target_atom and --target_chain, nearest surface points will be selected around this residue.")
+    p.add_argument("--target_atom", type=str, help="Target atom name (e.g., CA, NZ). Used together with --target_residue to find nearby surface vertices.")
+
+    # Selection and thresholds
+    p.add_argument("--num_points", type=int, default=5, help="Number of nearest points to select when a residue/atom is specified")
+    p.add_argument("--downsample", type=int, default=1, help="Downsample rate for site selection")
+    p.add_argument("--top_iface_percent", type=float, default=0.0, help="Top percentile of points based on interface score value to prioritize")
+    p.add_argument("--iface_cutoff", type=float, default=0.0, help="Interface score cutoff")
+    p.add_argument("--interface_only", action="store_true", help="Search only seed interfaces (requires seed complexes)")
+    p.add_argument("--desc_dist_cutoff", type=float, default=1.5, help="Descriptor distance cutoff (filtering)")
+    p.add_argument("--desc_dist_score_cutoff", type=float, default=0.25, help="Post-alignment score cutoff")
+
+    # Output and runtime
+    p.add_argument("--output_dir", type=str, default='.', help="Output directory")
+    p.add_argument("--output_postfix", type=str, default='out', help="Subfolder postfix for outputs")
+    p.add_argument("--count_clashes", action='store_true', help="Compute clashes (slower)")
+    p.add_argument("--ca_clash_threshold", type=float, default=100, help="CA clash threshold")
+    p.add_argument("--heavy_atom_clash_threshold", type=float, default=100, help="Heavy-atom clash threshold")    
+
+    return p
+
 
 def main(args):
     P2 = args.target_pdb
@@ -54,10 +70,8 @@ def main(args):
     else:
         print("Please specify either --split_seed_list or --seed_pdb")
         sys.exit(1)
-
-    print(f'Searching sites similar to {P2} from {",".join(set(lines))}...')
         
-    params = set_params(target_root = f'{args.target_db_root}/data/{args.target_db}', masif_db_root = args.seed_db_root, db_name = args.seed_db, masif_app = args.masif_app)
+    params = set_params(target_root = f'{args.target_db_root}/data/{args.target_db}', masif_db_root = args.seed_db_root, db_name = args.seed_db)
     P2_all_feats = get_features(params, P2, args.target_ppi_id, source=False, flip_desc=False)
 
     if args.target_residue and args.target_chain and args.target_atom:
@@ -69,7 +83,7 @@ def main(args):
         for idx in P2_selected_points_idx:
             P2_patch_descs.append(P2_all_feats['desc'][idx])
         P2_patch_descs = np.array(P2_patch_descs)
-        print(f'This will go through {len(P2_selected_points_idx)} points near {args.target_residue} in {P2} chain {args.target_chain}...')
+        print(f'Searching sites similar to {P2} from {",".join(set(lines))}. \nThis will go through {len(P2_selected_points_idx)} points near residue {args.target_residue} in {P2} chain {args.target_chain}...')
     else:
         P2_selected_points_idx, P2_patch_descs, P2_patch_iface = select_patches(
             P2_all_feats,
@@ -83,7 +97,7 @@ def main(args):
             print(f'No points selected for {P2}. Please check the parameters. Exiting...')
             sys.exit(1)
         else:
-            print(f'WARNING: Exhausitive alignment mode. This will go through {len(P2_selected_points_idx)} points and will take some time...')
+            print(f'Searching sites similar to {P2} from {",".join(set(lines))}. \nWARNING: Exhausitive alignment mode. This will go through {len(P2_selected_points_idx)} points and will take some time...')
 
     scores = {}
     os.makedirs(os.path.join(args.output_dir, f'{P2}_{args.output_postfix}'), exist_ok=True)
@@ -110,9 +124,9 @@ def main(args):
             scores[(P1, P2)]['heavy_atom_clash'] = []
 
     if not args.interface_only:
-        print(f'Aligning to all points with iface > {args.iface_cutoff} and desc dist < {args.desc_dist_cutoff}...')
+        print(f'Aligning to all points with iface > {args.iface_cutoff} and desc dist < {args.desc_dist_cutoff}.')
     else:
-        print(f'Aligning to interface points only with desc dist < {args.desc_dist_cutoff}...')
+        print(f'Aligning to interface points only with desc dist < {args.desc_dist_cutoff}.')
 
     for P1 in lines:
         if len(P1.split('_')) == 2:
@@ -137,7 +151,9 @@ def main(args):
                 # NOTE: compute a distance matrix between the selected points of P1 and P2 and filter them based on desc_dist_cutoff
                 desc_dist = np.linalg.norm(P1_patch_descs[:, None, :] - P2_patch_descs[None, :, :], axis=-1)
 
-                if np.min(desc_dist) > args.desc_dist_cutoff: continue
+                if np.min(desc_dist) > args.desc_dist_cutoff: 
+                    print(f'No points on {P1} with desc dist < {args.desc_dist_cutoff}. Skipping...')
+                    continue
 
                 for i, P2_center in enumerate(P2_selected_points_idx):  
                     P1_selected_points_idx_final = P1_selected_points_idx[np.where(desc_dist[:, i]<args.desc_dist_cutoff)]
@@ -147,10 +163,6 @@ def main(args):
                     target_atom, _ = surf2atom(
                         point_coords = np.array(P2_all_feats['pcd'].points)[P2_center].reshape(1,-1),
                         pdb_path = P2_all_feats['pdb'],
-                        k=1,
-                        distance_cutoff=5.0, 
-                        rsa_cutoff = None, 
-                        exclude_backbone = True
                     )
                     
                     target_residue = target_atom[0].get_parent().get_id()[1]
@@ -185,7 +197,9 @@ def main(args):
                                 compute_clashes = False
                             )
 
-                        if output[1] >= args.desc_dist_score_cutoff and output[0][0] <= args.ca_clash_threshold and output[0][1] <= args.heavy_atom_clash_threshold:                    
+                        score_ok = output[1] >= args.desc_dist_score_cutoff
+
+                        if score_ok:
                             os.makedirs(output_root, exist_ok=True)
                             shutil.move(os.path.join(local_tmp_dir, f'{out_filename_base}.pdb'), os.path.join(output_root, f'{out_filename_base}.pdb'))
                             P1_raw_pdb = os.path.join(params['top_seed_dir'], 'data_preparation', '00-raw_pdbs', f'{P1.split("_")[0]}.pdb')
@@ -195,10 +209,6 @@ def main(args):
                             P1_nearest_atom, _ = surf2atom(
                                 point_coords = np.array(P1_pcd.points)[P1_center].reshape(1,-1), 
                                 pdb_path = os.path.join(output_root, f'{out_filename_base}.pdb'), 
-                                k = 1, 
-                                distance_cutoff = 3.0, 
-                                rsa_cutoff = 0.2, 
-                                exclude_backbone = True
                             )
 
                             P1_nearest_res = P1_nearest_atom[0].get_parent().get_id()[1]
@@ -226,10 +236,10 @@ def main(args):
                                 scores[(P1, P2)]['ca_clash'].append(output[0][0])
                                 scores[(P1, P2)]['heavy_atom_clash'].append(output[0][1])
 
-                    if len(scores[(P1, P2)]['P1_id'])>0:
-                        pd.DataFrame(scores[(P1, P2)]).to_csv(f'{output_root}/{P1}_{ppi_id}_to_{P2}_{args.target_ppi_id}.csv')
-                    else:
-                        pass
+                        if len(scores[(P1, P2)]['P1_id'])>0:
+                            pd.DataFrame(scores[(P1, P2)]).to_csv(f'{output_root}/{P1}_{ppi_id}_to_{P2}_{args.target_ppi_id}.csv')
+                        else:
+                            pass
 
             except Exception as e:
                 print(f'Error: {e}')

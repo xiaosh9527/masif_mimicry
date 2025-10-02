@@ -218,15 +218,15 @@ def main(uniprot_id: str = 'P0DTC2', pae_cutoff: float = 15.0):
 
     for i, clust in enumerate(list_of_clust):
         print(f'Step 1: Processing cluster {i+1} for {uniprot_id}...')
-        out_file_1 = os.path.join(TMP_FOLDER, f'{uniprot_id}-F1-dom{i+1}_tmp1.pdb')
+        out_file_1 = os.path.join(TMP_FOLDER, f'{uniprot_id}-F1-dom-{str(i+1).zfill(2)}_tmp1.pdb')
         expanded_clust = expand_cluster(clust, max_neighbor_dist=5)
         extract_residues(pdb_file, expanded_clust, out_file_1, cap_terminis=False)
         print(f'Step 2: Truncating low pLDDT loops for cluster {i+1}...')
-        out_file_2 = os.path.join(TMP_FOLDER, f'{uniprot_id}-F1-dom{i+1}_tmp2.pdb')
+        out_file_2 = os.path.join(TMP_FOLDER, f'{uniprot_id}-F1-dom-{str(i+1).zfill(2)}_tmp2.pdb')
         done = truncate_low_plddt_loops(out_file_1, out_file_2)
         if done:
             print(f'Step 3: Adding missing terminal atoms NME & ACE to N & C terminals...')
-            out_file_3 = os.path.join(FRAG_FOLDER, f'{uniprot_id}-F1-dom{i+1}.pdb')
+            out_file_3 = os.path.join(FRAG_FOLDER, f'{uniprot_id}-F1-dom-{str(i+1).zfill(2)}.pdb')
             extract_residues(out_file_2, 'all', out_file_3, cap_terminis=True)
         else:
             print(f'Step 3 skipped due for disorganized regions!')
@@ -237,6 +237,8 @@ if __name__ == '__main__':
     args = parser.parse_args()  
 
     TMP_FOLDER = os.getenv('TMPDIR')
+    if TMP_FOLDER is None:
+        TMP_FOLDER = '/tmp/'
 
     RAW_PDB_FOLDER = f'{args.input_dir}/raw_pdb/'
     PAE_FOLDER = f'{args.input_dir}/pae_data/'    

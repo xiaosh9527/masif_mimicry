@@ -2,6 +2,9 @@
 
 This repository contains code to perform the experiments in _Mapping the latent CRBN-molecular glue degrader interactome_
 
+### Pipeline overview
+![MaSIF-mimicry overview and pipeline](img/masif_mimicry.png)
+
 ## Table of Contents: 
 
 - [System and hardware requirements](#system-and-hardware-requirements)

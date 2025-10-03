@@ -1,6 +1,7 @@
 import pandas as pd
 import requests
 import time
+import argparse
 
 def fetch_batch_fasta(uniprot_ids):
     """
@@ -45,12 +46,17 @@ def parse_fasta(fasta_str):
     return sequences
 
 def main():
-    # Read the input CSV file (adjust filename as needed)
-    df = pd.read_csv("/Users/ymeng/Desktop/ThomaLab/R_projects/MaSIF_surface_mimicry_inspection/results/proc_trunc_86_6H0F_C_B_250325_pending.csv")
-    
+    parser = argparse.ArgumentParser(description="Fetch FASTA sequences for UniProt IDs and add truncated sequences to CSV.")
+    parser.add_argument("--input", "-i", required=True, help="Path to input CSV file containing columns: uniprot_id, trunc_resi_start, trunc_resi_end")
+    parser.add_argument("--output", "-o", required=True, help="Path to write the updated CSV file")
+    args = parser.parse_args()
+
+    # Read the input CSV file
+    df = pd.read_csv(args.input)
+
     # Get unique UniProt IDs to minimize duplicate requests
     unique_ids = list(df["uniprot_id"].unique())
-    
+
     # We'll break the list into smaller batches to avoid excessively long URLs
     batch_size = 50
     sequences = {}
@@ -63,7 +69,7 @@ def main():
         else:
             print(f"Batch starting at index {i} failed to retrieve data.")
         time.sleep(1)  # Sleep 1 second between batches to be polite to the server
-    
+
     # Create a new column for the truncated sequence
     truncated_seqs = []
     for index, row in df.iterrows():
@@ -77,10 +83,10 @@ def main():
         else:
             trunc_seq = None
         truncated_seqs.append(trunc_seq)
-    
+
     df["turnc_sequence"] = truncated_seqs
-    df.to_csv("/Users/ymeng/Desktop/ThomaLab/R_projects/MaSIF_surface_mimicry_inspection/results/proc_trunc_86_6H0F_C_B_250325_pending_seq.csv", index=False)
-    print("Updated CSV file saved as 'output.csv'.")
+    df.to_csv(args.output, index=False)
+    print(f"Updated CSV file saved as '{args.output}'.")
 
 if __name__ == "__main__":
     main()

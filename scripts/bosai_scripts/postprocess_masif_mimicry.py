@@ -10,7 +10,6 @@ Usage:
     python3 /scratch/ymeng/MaSIF_surface_mimicry/postprocess_masif_mimicry.py \
         --pdb_paths /scratch/ymeng/MaSIF_surface_mimicry/6H0F_C_B_mimicry_binders/A0A0A0MRZ7-F1-dom-01.pdb \
         --target_pdb_path /scratch/ymeng/MaSIF_surface_mimicry/Preprocess/input/6H0F_B_B_Y70_502/6H0F_B.pdb \
-        --query_preprocessed_root /scratch/ymeng/MaSIF_surface_mimicry/Preprocess \
         --out_csv_file /scratch/ymeng/MaSIF_surface_mimicry/out.csv \
         --ligand B_Y70 \
         --debug
@@ -45,11 +44,9 @@ paths_config = config['paths']
 deeptmhmm_dir = Path(paths_config['deeptmhmm_dir'])
 python_path = paths_config['python_path']
 stride_exec = paths_config['stride_exec']
-masif_grid_search_scripts_remote = paths_config['masif_grid_search_scripts_remote']
 
-filenames_config = config['filenames']
-geosedic_py_path = os.path.join(masif_grid_search_scripts_remote, filenames_config['geosedic_py'])
-lig_desc_dist_score_py = os.path.join(masif_grid_search_scripts_remote, filenames_config['lig_desc_dist_score_py'])
+geodesic_py_path = os.path.join(os.path.dirname(__file__), "geodesic_length.py")
+lig_desc_dist_score_py = os.path.join(os.path.dirname(__file__), "ligand_desc_dist_score.py")
 
 # ------------------ Helper Functions ------------------
 
@@ -498,26 +495,25 @@ def compute_geodesic_lengths(pdb_path):
     """Compute geodesic length metrics by calling an external script."""
     try:
         result = subprocess.run(
-            [python_path, geosedic_py_path, "--input", str(pdb_path), "--abs", "--norm"],
+            [python_path, geodesic_py_path, "--input", str(pdb_path), "--abs", "--norm"],
             capture_output=True, text=True, check=True
         )
         lines = result.stdout.strip().splitlines()
         if len(lines) >= 2:
             return {
-                'abs_geosedic_length': float(lines[0]),
-                'norm_geosedic_length': float(lines[1]),
+                'abs_geodesic_length': float(lines[0]),
+                'norm_geodesic_length': float(lines[1]),
             }
         else:
-            return {'abs_geosedic_length': None, 'norm_geosedic_length': None}
+            return {'abs_geodesic_length': None, 'norm_geodesic_length': None}
     except Exception as e:
         print(f"Error calling geodesic_length.py for {pdb_path}: {e}")
-        return {'abs_geosedic_length': None, 'norm_geosedic_length': None}
+        return {'abs_geodesic_length': None, 'norm_geodesic_length': None}
 
 # ------------------ Main Processing Function ------------------
 def process_results(
     pdb_paths, 
     target_pdb, 
-    query_preprocessed_root,
     ligand_def: dict = None, 
     sulfur_name: str = None, 
     recompute_clashes: bool = True, 
@@ -616,12 +612,6 @@ if __name__ == "__main__":
         help="Absolute path to the target .pdb file."
     )
     parser.add_argument(
-        "--query_preprocessed_root", 
-        type=Path, 
-        required=True, 
-        help="Directory containing the preprocessed query data."
-    )
-    parser.add_argument(
         "-o", "--out_csv_file", 
         type=Path, 
         required=True, 
@@ -660,7 +650,6 @@ if __name__ == "__main__":
     df = process_results(
         pdb_paths=args.pdb_paths, 
         target_pdb=args.target_pdb_path,
-        query_preprocessed_root=args.query_preprocessed_root,
         ligand_def=ligand, 
         sulfur_name=args.sulfur,
         debug=args.debug

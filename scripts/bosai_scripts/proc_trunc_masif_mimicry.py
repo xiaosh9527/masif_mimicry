@@ -23,8 +23,8 @@ Metrics computed for the truncated binder are renamed according to the mapping b
     binder_iface_n_ss         ->  trunc_iface_n_ss
     binder_iface_structured   ->  trunc_iface_structured
     binder_iface_ss           ->  trunc_iface_ss
-    abs_geosedic_length       ->  abs_geosedic_length_trunc
-    norm_geosedic_length      ->  norm_geosedic_length_trunc
+    abs_geodesic_length       ->  abs_geodesic_length_trunc
+    norm_geodesic_length      ->  norm_geodesic_length_trunc
 
 In addition, new columns are added as differences between the truncated and original binder interface metrics:
     - d_iface_n_resi
@@ -36,7 +36,7 @@ A new metric, EvoEF2_score, is also extracted from the trunc_binder_path filenam
 the value "-451" (converted to a numeric value) is assigned to EvoEF2_score.
 
 Usage:
-    python proc_trunc_masif_hits.py --input input.csv --out_csv_file output.csv [--ligand CHAIN_RESNAME] [--sulfur ATOM_NAME] [--masif_neosurf_dir <path>] [--debug]
+    python proc_trunc_masif_hits.py --input input.csv --out_csv_file output.csv [--ligand CHAIN_RESNAME] [--sulfur ATOM_NAME] [--debug]
 """
 
 from pathlib import Path
@@ -56,9 +56,10 @@ from Bio import pairwise2  # for alignment
 from Bio.PDB.NeighborSearch import NeighborSearch
 from Bio.PDB import StructureBuilder
 import yaml
+import sys
 
 # ------------------ Load configuration ------------------
-# Adjust CONFIG_PATH as needed.
+# Load configuration from config/config.yaml
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.yaml")
 with open(CONFIG_PATH, 'r') as f:
     config = yaml.safe_load(f)
@@ -67,10 +68,8 @@ paths_config = config['paths']
 deeptmhmm_dir = Path(paths_config['deeptmhmm_dir'])
 python_path = paths_config['python_path']
 stride_exec = paths_config['stride_exec']
-masif_grid_search_scripts_remote = paths_config['masif_grid_search_scripts_remote']
 
-filenames_config = config['filenames']
-geosedic_py_path = os.path.join(masif_grid_search_scripts_remote, filenames_config['geosedic_py'])
+geodesic_py_path = os.path.join(os.path.dirname(__file__), "geodesic_length.py")
 
 # ------------------ Helper Functions ------------------
 
@@ -518,20 +517,20 @@ def compute_geodesic_lengths(pdb_path):
     """Compute geodesic length metrics by calling an external script."""
     try:
         result = subprocess.run(
-            [python_path, geosedic_py_path, "--input", str(pdb_path), "--abs", "--norm"],
+            [python_path, geodesic_py_path, "--input", str(pdb_path), "--abs", "--norm"],
             capture_output=True, text=True, check=True
         )
         lines = result.stdout.strip().splitlines()
         if len(lines) >= 2:
             return {
-                'abs_geosedic_length': float(lines[0]),
-                'norm_geosedic_length': float(lines[1]) * 1000,
+                'abs_geodesic_length': float(lines[0]),
+                'norm_geodesic_length': float(lines[1]) * 1000,
             }
         else:
-            return {'abs_geosedic_length': None, 'norm_geosedic_length': None}
+            return {'abs_geodesic_length': None, 'norm_geodesic_length': None}
     except Exception as e:
-        print(f"Error calling geosedic_py for {pdb_path}: {e}")
-        return {'abs_geosedic_length': None, 'norm_geosedic_length': None}
+        print(f"Error calling geodesic_py for {pdb_path}: {e}")
+        return {'abs_geodesic_length': None, 'norm_geodesic_length': None}
 
 # ------------------ Processing Function for Truncated Binder Metrics ------------------
 
@@ -601,10 +600,10 @@ def process_truncated_results(input_csv, ligand_def, sulfur_name, debug):
         # Recompute geodesic metrics for truncated binder.
         geo_metrics_trunc = compute_geodesic_lengths(str(trunc_binder_path))
         geo_metrics_trunc_renamed = {}
-        if "abs_geosedic_length" in geo_metrics_trunc:
-            geo_metrics_trunc_renamed["abs_geosedic_length_trunc"] = geo_metrics_trunc["abs_geosedic_length"]
-        if "norm_geosedic_length" in geo_metrics_trunc:
-            geo_metrics_trunc_renamed["norm_geosedic_length_trunc"] = geo_metrics_trunc["norm_geosedic_length"]
+        if "abs_geodesic_length" in geo_metrics_trunc:
+            geo_metrics_trunc_renamed["abs_geodesic_length_trunc"] = geo_metrics_trunc["abs_geodesic_length"]
+        if "norm_geodesic_length" in geo_metrics_trunc:
+            geo_metrics_trunc_renamed["norm_geodesic_length_trunc"] = geo_metrics_trunc["norm_geodesic_length"]
 
         # Compute new difference metrics between truncated and original binder interface metrics.
         # Original binder metrics are assumed to be in the CSV row.
@@ -708,12 +707,7 @@ if __name__ == "__main__":
         default=None,
         help="Atom name of the sulfur. (Optional)"
     )
-    parser.add_argument(
-        "--masif_neosurf_dir",
-        type=Path,
-        default=".",
-        help="Directory of MaSIF-neosurf."
-    )
+    
     parser.add_argument(
         "--debug",
         action="store_true",
@@ -721,9 +715,6 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    # Update sys.path to include MaSIF-neosurf if needed.
-    import sys
-    sys.path.append(str(args.masif_neosurf_dir.resolve()))
     # Note: In this script we do not use parse_score_file since scores are already in the input CSV.
 
     if args.ligand is not None:

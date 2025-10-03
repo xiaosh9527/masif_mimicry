@@ -7,52 +7,26 @@ import subprocess
 import numpy as np
 import csv
 import re
+import yaml
 
 """
-# 4_EvoEF2_truncate.py
-# Yanxiang Meng - 25.3.2025
-
-## Purpose
-This script truncates a protein structure (PDB) file into sliding windows of a specified length and evaluates each segment using EvoEF2 to identify the most stable segment. It leverages interface residue positions and applies additional distance criteria to ensure quality truncations.
-
-## How It Works
-- **Preprocessing:** Fixes broken chain identifiers and filters out nonstandard amino acids.
-- **Residue Analysis:** Determines the residue range and processes interface residues, removing outliers.
-- **Window Generation:** Creates sliding windows over the interface region with a fixed length.
-- **Filtering:** Discards windows where:
-  - The minimum distance from any interface residue to the window’s N- or C-terminus is below a specified cutoff.
-  - The distance from the mean interface residue to the nearest window terminus is below a specified cutoff.
-- **Evaluation:** Runs EvoEF2 on each valid window and selects the window with the best (lowest) score.
-- **Output:** Generates a CSV summary and optionally copies the best scoring PDB to an output directory.
-
-## How to Use
-Run the script using the following command:
-
-```bash
 python3 EvoEF2_truncate.py \
+    --clean \
     --input /path/to/input.pdb \
     --iface "101_102_103_106" \
     --length 86 \
-    --temp_dir /path/to/temp_dir \
-    --out_dir /path/to/out_dir \
-    --min_iface_dist_terminus_cutoff 2 \
-    --mean_iface_dist_terminus_cutoff 5 \
-    --clean
-```
-
-- **--input:** Path to the input PDB file.
-- **--iface:** Interface residue numbers (underscore-separated).
-- **--length:** Length of the truncation window.
-- **--temp_dir:** Directory for temporary files.
-- **--out_dir:** (Optional) Directory where the best PDB file will be saved.
-- **--min_iface_dist_terminus_cutoff:** Minimum distance from any interface residue to the window termini.
-- **--mean_iface_dist_terminus_cutoff:** Minimum distance from the mean interface residue to the nearest terminus.
-- **--clean:** Remove intermediate files after processing.
+    --temp_dir /scratch/ymeng/MaSIF_search_3.6/8VLB_A_A_3JF_301/Postprocess/temp \
+    --out_dir MaSIF_search_3.6/8VLB_A_A_3JF_301/Postprocess/truncate
 """
+# ------------------ Load configuration ------------------
+# Adjust CONFIG_PATH as needed.
+CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.yaml")
+with open(CONFIG_PATH, 'r') as f:
+    config = yaml.safe_load(f)
 
-# define absolute paths
-fix_pdb_py_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '4_fix_broken_auth_chain.py')  # in the same directory as this script
-EvoEF2_dir = "~/EvoEF2"
+paths_config = config['paths']
+EvoEF2_dir = paths_config['EvoEF2_dir']
+
 
 # List of 20 standard amino acid three-letter codes
 STANDARD_AA = {"ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY",
@@ -68,11 +42,6 @@ def parse_arguments():
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
     parser.add_argument("--clean", action="store_true", help="Remove intermediate files after processing")
     parser.add_argument("--out_dir", help="Destination directory to copy the best pdb file (filename remains unchanged)")
-    # New criteria flags:
-    parser.add_argument("--min_iface_dist_terminus_cutoff", type=int, default=2,
-                        help="Minimum distance from any interface residue to either terminus of the window")
-    parser.add_argument("--mean_iface_dist_terminus_cutoff", type=int, default=5,
-                        help="Minimum distance from the mean interface residue to the closest terminus of the window")
     return parser.parse_args()
 
 def safe_makedir(path):
@@ -80,9 +49,6 @@ def safe_makedir(path):
         shutil.rmtree(path)
     os.makedirs(path)
 
-def run_fix_broken_pdb_chain(input_pdb, output_pdb):
-    cmd = ["python3", fix_pdb_py_path, "--input", input_pdb, "--output", output_pdb]
-    subprocess.run(cmd, check=True)
 
 def filter_nonstandard_amino_acids(pdb_file):
     filtered_lines = []
@@ -119,11 +85,6 @@ def parse_iface(iface_str):
     return [int(x) for x in iface_str.split("_")]
 
 def remove_outliers(iface_array, length):
-    """
-    Repeatedly remove the interface residue with the largest z-score until
-    the range (max - min) is less than or equal to length-1.
-    Returns the filtered numpy array.
-    """
     iface_array = np.array(iface_array)
     while (iface_array.max() - iface_array.min()) > (length - 1):
         if iface_array.std() == 0:
@@ -131,7 +92,7 @@ def remove_outliers(iface_array, length):
         zscores = np.abs((iface_array - iface_array.mean()) / iface_array.std())
         idx = np.argmax(zscores)
         iface_array = np.delete(iface_array, idx)
-    return iface_array
+    return int(iface_array.min()), int(iface_array.max())
 
 def truncate_pdb_by_residue(input_pdb, out_pdb, start_resi, end_resi):
     with open(input_pdb, "r") as fin, open(out_pdb, "w") as fout:
@@ -166,6 +127,48 @@ def run_EvoEF2(pdb_path):
         raise ValueError(f"Could not parse EvoEF2 total from output:\n{output}")
     return total_val
 
+
+def run_fix_broken_pdb_chain(input_pdb, output_pdb):
+    fixed_lines = []
+    with open(input_pdb, 'r') as infile:
+        for line in infile:
+            if (line.startswith("ATOM") or line.startswith("HETATM")) and len(line) >= 78:
+                record     = line[0:6]
+                serial     = line[6:11]
+                spacer1    = line[11:12]
+                atom_name  = line[12:16]
+                altLoc     = line[16:17]
+                resName    = line[17:20]
+                spacer2    = line[20:21]
+                chain      = line[21:22]
+                resSeq     = line[22:26]
+                iCode      = line[26:27]
+                spacer3    = line[27:30]
+                x          = line[30:38]
+                y          = line[38:46]
+                z          = line[46:54]
+                occupancy  = line[54:60]
+                tempFactor = line[60:66]
+                authChain_field = line[66:76]
+                element    = line[76:78]
+                remainder  = line[78:]
+
+                new_authChain = f"{chain:>{len(authChain_field)}}"
+
+                new_line = (
+                    record + serial + spacer1 + atom_name + altLoc +
+                    resName + spacer2 + chain + resSeq + iCode + spacer3 +
+                    x + y + z + occupancy + tempFactor +
+                    new_authChain + element + remainder
+                )
+                fixed_lines.append(new_line)
+            else:
+                fixed_lines.append(line)
+
+    with open(output_pdb, 'w') as outfile:
+        outfile.writelines(fixed_lines)
+
+
 def main():
     args = parse_arguments()
     input_basename = os.path.splitext(os.path.basename(args.input))[0]
@@ -198,6 +201,7 @@ def main():
         if args.verbose:
             print(f"EvoEF2 score for fixed pdb: {evoef2_total}")
         best_file = fixed_pdb
+        # If out_dir is provided, copy the fixed pdb file to out_dir with new filename.
         if args.out_dir:
             try:
                 os.makedirs(args.out_dir, exist_ok=True)
@@ -210,6 +214,7 @@ def main():
             except Exception as e:
                 if args.verbose:
                     print(f"Error copying fixed pdb file: {e}", file=sys.stderr)
+        # Clean up if requested.
         if args.clean:
             try:
                 shutil.rmtree(base_temp_dir)
@@ -225,49 +230,17 @@ def main():
     trunc_dir = os.path.join(base_temp_dir, "truncate")
     os.makedirs(trunc_dir, exist_ok=True)
 
-    # Parse and filter interface residues.
     iface_array = parse_iface(args.iface)
-    iface_array_filtered = remove_outliers(iface_array, args.length)
-    min_iface = int(iface_array_filtered.min())
-    max_iface = int(iface_array_filtered.max())
-    mean_iface = np.mean(iface_array_filtered)
-    if args.verbose:
-        print(f"Filtered interface residues: {iface_array_filtered}")
-        print(f"Interface residue range after filtering: {min_iface} to {max_iface}")
-        print(f"Mean interface residue: {mean_iface}")
+    min_iface, max_iface = remove_outliers(iface_array, args.length)
 
-    # Compute candidate truncation windows
     trunc_resi_start = list(range(max_iface - args.length + 1, min_iface + 1))
     trunc_resi_end = [start + args.length - 1 for start in trunc_resi_start]
 
-    # New: Filter candidates by checking distance criteria for each truncation window.
-    valid_starts = []
-    valid_ends = []
-    for start, end in zip(trunc_resi_start, trunc_resi_end):
-        # For each interface residue, calculate its distance to the nearest terminus.
-        distances = [min(r - start, end - r) for r in iface_array_filtered]
-        min_iface_dist_terminus = min(distances)
-        # Calculate the distance of the mean interface residue to the nearest terminus.
-        mean_iface_dist_terminus = min(mean_iface - start, end - mean_iface)
-        if args.verbose:
-            print(f"Window {start}-{end}: min_iface_dist_terminus={min_iface_dist_terminus}, mean_iface_dist_terminus={mean_iface_dist_terminus}")
-        if (min_iface_dist_terminus >= args.min_iface_dist_terminus_cutoff) and \
-           (mean_iface_dist_terminus >= args.mean_iface_dist_terminus_cutoff):
-            valid_starts.append(start)
-            valid_ends.append(end)
-    if args.verbose:
-        print(f"Valid truncation windows after applying distance criteria: {list(zip(valid_starts, valid_ends))}")
-
-    # Process each valid truncation candidate.
     summary = []
-    for start, end in zip(valid_starts, valid_ends):
+    for start, end in zip(trunc_resi_start, trunc_resi_end):
         out_filename = f"{input_basename}_{start}_{end}.pdb"
         out_pdb = os.path.join(trunc_dir, out_filename)
         truncate_pdb_by_residue(fixed_pdb, out_pdb, start, end)
-        # Calculate distance metrics for this window
-        distances = [min(r - start, end - r) for r in iface_array_filtered]
-        min_iface_dist_terminus = min(distances)
-        mean_iface_dist_terminus = min(mean_iface - start, end - mean_iface)
         try:
             evoef2_total = run_EvoEF2(out_pdb)
         except Exception as e:
@@ -278,16 +251,14 @@ def main():
             "pdb_path": out_pdb,
             "trunc_resi_start": start,
             "trunc_resi_end": end,
-            "EvoEF2": evoef2_total,
-            "min_iface_dist_terminus": int(round(min_iface_dist_terminus)),
-            "mean_iface_dist_terminus": int(round(mean_iface_dist_terminus))
+            "EvoEF2": evoef2_total
         })
         if args.verbose:
             print(f"Processed {out_pdb} with EvoEF2 score {evoef2_total}")
 
     csv_path = os.path.join(base_temp_dir, f"{input_basename}_EvoEF2_trunc.csv")
     with open(csv_path, "w", newline="") as csvfile:
-        fieldnames = ["pdb_path", "trunc_resi_start", "trunc_resi_end", "EvoEF2", "min_iface_dist_terminus", "mean_iface_dist_terminus"]
+        fieldnames = ["pdb_path", "trunc_resi_start", "trunc_resi_end", "EvoEF2"]
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames, delimiter="\t")
         writer.writeheader()
         for row in summary:
@@ -305,6 +276,7 @@ def main():
     if args.verbose:
         print(f"Best truncation: start {best['trunc_resi_start']}, end {best['trunc_resi_end']}, EvoEF2 score {int(round(best['EvoEF2']))}")
 
+    # If out_dir is provided, copy the best pdb file to that directory with the updated filename.
     if args.out_dir:
         try:
             os.makedirs(args.out_dir, exist_ok=True)
@@ -318,6 +290,7 @@ def main():
             if args.verbose:
                 print(f"Error copying best pdb file: {e}", file=sys.stderr)
 
+    # If --clean flag is set, remove the temporary directory with intermediate files.
     if args.clean:
         try:
             shutil.rmtree(base_temp_dir)
@@ -328,6 +301,7 @@ def main():
                 print(f"Error cleaning up intermediate files: {e}", file=sys.stderr)
 
     print(best_file)
+
 
 if __name__ == "__main__":
     main()

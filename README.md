@@ -2,6 +2,9 @@
 
 This repository contains code to perform the experiments in _Mapping the latent CRBN-molecular glue degrader interactome_
 
+### Pipeline overview
+![MaSIF-mimicry overview and pipeline](img/masif_mimicry.png)
+
 ## Table of Contents: 
 
 - [System and hardware requirements](#system-and-hardware-requirements)
@@ -18,11 +21,12 @@ git clone https://github.com/LPDI-EPFL/masif_seed.git
 cd masif_seed
 git clone https://github.com/xiaosh9527/masif_seed_mimicry.git
 ```
+The required the software for running MaSIF-mimicry is the same as listed in the MaSIF-seed repository, wioth the exception of python-igraph >= 0.9.6 which is required for pae_to_domain package.
 
 ## Step-by-step example
 
-To reproduce the experiments in the paper, the entire datasets for the human proteome consume several terabytes. We will test MaSIF-mimicry using one example between mTOR and 
-We first use pae_to_domain to split the AlphaFold models into domains based on a PAE cutoff of 15 Å.
+To reproduce the experiments in the paper, the entire datasets for the human proteome consume several terabytes. We will test MaSIF-mimicry using one example between mTOR and Ikaros.
+Here, we provide an example to process mTOR structures into individual structural domains by using pae_to_domain to split the AlphaFold models based on a PAE cutoff of 15 Å.
 
 ```
 cd masif/data/
@@ -32,7 +36,8 @@ git clone https://github.com/tristanic/pae_to_domains.git
 sh ../../../masif_mimicry/scripts/process_af_model.sh P42345
 ```
 
-This will generate truncated structural domains from the original full-length AF model. Below, we use one of the domains as an example. In case where multiple domains are generated, the same procedure must be applied to all. Now precompute the features for this protein domain, including the geodesic coordinates: 
+This will generate truncated structural domains from the original full-length AF model. The same process can be applied to rest of the proteome proteins to generate a MaSIF human proteome database. 
+Below, we use one of the mTOR domains as an example. In case where multiple domains are generated, the same procedure must be applied to all. Now precompute the features for this protein domain, including the geodesic coordinates: 
 
 ```
 ./data_precompute_patches_one.sh P42345-F1-dom-01_A

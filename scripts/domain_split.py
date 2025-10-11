@@ -5,6 +5,8 @@ import numpy as np
 
 from Bio.PDB import *
 
+AF_DB_VERSION = 'v6' # Current version. For the paper we used v4
+
 def create_parser():
     parser = argparse.ArgumentParser(description='Split AlphaFold models into domains based on PAE.')
     parser.add_argument('--uniprot_id', type=str, required=True, help='UniProt ID of the protein to process.')
@@ -21,8 +23,9 @@ def retrive_data_from_url(url, outfile):
         raise Exception(f"Failed to retrieve data from {url}. Status code: {response.status_code}")
 
 def download_af_db_data(uniprot_id, out_pdb_folder='./', out_pae_folder='./'):
-    af_pdb_query = f'https://alphafold.ebi.ac.uk/files/AF-{uniprot_id}-F1-model_v4.pdb'
-    af_pae_query = f'https://alphafold.ebi.ac.uk/files/AF-{uniprot_id}-F1-predicted_aligned_error_v4.json'
+    af_pdb_query = f'https://alphafold.ebi.ac.uk/files/AF-{uniprot_id}-F1-model_{AF_DB_VERSION}.pdb'
+    af_pae_query = f'https://alphafold.ebi.ac.uk/files/AF-{uniprot_id}-F1-predicted_aligned_error_{AF_DB_VERSION}.json'
+
 
 
     out_pdb_name = os.path.join(out_pdb_folder, f"AF-{uniprot_id}-F1-model_v4.pdb")
@@ -207,8 +210,8 @@ def truncate_low_plddt_loops(input_path, output_path):
 def main(uniprot_id: str = 'P0DTC2', pae_cutoff: float = 15.0):
     download_af_db_data(uniprot_id, out_pae_folder=PAE_FOLDER, out_pdb_folder=RAW_PDB_FOLDER)
 
-    pdb_file = os.path.join(RAW_PDB_FOLDER, f'AF-{uniprot_id}-F1-model_v4.pdb')
-    pae_file = os.path.join(PAE_FOLDER, f'AF-{uniprot_id}-F1-predicted_aligned_error_v4.json')
+    pdb_file = os.path.join(RAW_PDB_FOLDER, f'AF-{uniprot_id}-F1-model_{AF_DB_VERSION}.pdb')
+    pae_file = os.path.join(PAE_FOLDER, f'AF-{uniprot_id}-F1-predicted_aligned_error_{AF_DB_VERSION}.json')
     tmp_file = os.path.join(TMP_FOLDER, f'AF-{uniprot_id}-F1-predicted_aligned_clusters.csv')
 
     subprocess.run(['python', '/work/lpdi/users/shxiao/pae_to_domains/pae_to_domains.py', pae_file, '--pae_cutoff', str(pae_cutoff), '--output_file', tmp_file])

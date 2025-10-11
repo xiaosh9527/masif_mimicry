@@ -73,7 +73,13 @@ sh ../../../masif_seed_mimicry/scripts/process_af_model.sh P42345
 ```
 
 This will generate truncated structural domains from the original full-length AF model. The same process can be applied to rest of the proteome proteins to generate a MaSIF human proteome database. 
-Below, we use one of the mTOR domains as an example. In case where multiple domains are generated, the same procedure must be applied to all. Now precompute the features for this protein domain, including the geodesic coordinates: 
+> Note: For the article we used AF database v4, which can be downladed in this [link](https://ftp.ebi.ac.uk/pub/databases/alphafold/v4/UP000005640_9606_HUMAN_v4.tar) (4.8 GB).
+>
+> Warning: The current script [`domain_split.py`](scripts/domain_split.py), called by [`process_af_model.sh`](scripts/process_af_model.sh), uses the version v6 because v4 is no longer supported for download using the Uniprot ID.
+
+Below, we use one of the mTOR domains as an example. 
+In case where multiple domains are generated, the same procedure must be applied to all.
+Now precompute the features for this protein domain, including the geodesic coordinates: 
 
 ```
 ./data_precompute_patches_one.sh P42345-F1-dom-01_A

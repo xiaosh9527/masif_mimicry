@@ -64,11 +64,12 @@ To reproduce the experiments in the paper, the entire datasets for the human pro
 Here, we provide an example to process mTOR structures into individual structural domains by using pae_to_domain to split the AlphaFold models based on a PAE cutoff of 15 Å.
 
 ```
+# Assuming you are in the masif_seed directory and running inside the docker container...
 cd masif/data/
 mkdir masif_human_proteome
 cd masif_human_proteome
 git clone https://github.com/tristanic/pae_to_domains.git
-sh ../../../masif_mimicry/scripts/process_af_model.sh P42345
+sh ../../../masif_seed_mimicry/scripts/process_af_model.sh P42345
 ```
 
 This will generate truncated structural domains from the original full-length AF model. The same process can be applied to rest of the proteome proteins to generate a MaSIF human proteome database. 

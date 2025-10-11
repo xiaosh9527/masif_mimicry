@@ -52,10 +52,10 @@ cd masif_seed
 git clone https://github.com/xiaosh9527/masif_seed_mimicry.git
 cd masif_seed_mimicry
 # Build the docker container (this may take some minutes)
-docker build . -t masif-mimicry 
+docker build . -t masif_mimicry 
 cd ..
 # Initialize the docker container terminal
-docker run --name masif -it -v $(pwd):/workspace -w /workspace masif_mimicry
+docker run --rm -it -v $(pwd):/workspace -w /workspace masif_mimicry
 ```
 
 ## Step-by-step example

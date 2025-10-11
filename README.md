@@ -6,24 +6,24 @@ This repository contains code to perform the experiments in _Mapping the latent 
 ![MaSIF-mimicry overview and pipeline](img/masif_mimicry.jpg)
 
 ## Table of Contents: 
-
-- [System and hardware requirements](#system-and-hardware-requirements)
+- [System requirements](#system-requirements)
+  - [Hardware requirements](#hardware-requirements)
+  - [Software requirements](#software-requirements)
+- [Installation with Docker](#installation-with-docker)
 - [Step-by-step example](#step-by-step-example)
 - [Configuring parameters](#configuring-parameters)
 - [License](#license)
 - [Reference](#reference)
 
-## System and hardware requirements
+## System requirements
 
-MaSIF-mimicry has been tested on Linux. To run the mimicry pipeline, first clone the official MaSIF-mimicry repository and then clone this repository inside it. 
-```
-git clone https://github.com/LPDI-EPFL/masif_seed.git
-cd masif_seed
-git clone https://github.com/xiaosh9527/masif_seed_mimicry.git
-```
-The required the software for running MaSIF-mimicry is the same as listed in the MaSIF-seed repository, wioth the exception of python-igraph >= 0.9.6 which is required for pae_to_domain package.
+### Hardware requirements
 
-## Requirements
+MaSIF-seed has been tested on Linux, and it is recommended to run on an x86-based linux Docker container. 
+
+Currently, MaSIF takes a few seconds to preprocess every protein. We find the main bottleneck to be the APBS computation for surface charges, which can likely be optimized. Nevertheless, we recommend a distributed cluster to preprocess the data for large datasets of proteins.
+
+### Software requirements
 
 MaSIF relies on external software/libraries to handle protein databank files and surface files, 
 to compute chemical/geometric features and coordinates, and to perform neural network calculations. 

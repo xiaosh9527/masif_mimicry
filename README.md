@@ -23,6 +23,23 @@ git clone https://github.com/xiaosh9527/masif_seed_mimicry.git
 ```
 The required the software for running MaSIF-mimicry is the same as listed in the MaSIF-seed repository, wioth the exception of python-igraph >= 0.9.6 which is required for pae_to_domain package.
 
+## Requirements
+
+MaSIF relies on external software/libraries to handle protein databank files and surface files, 
+to compute chemical/geometric features and coordinates, and to perform neural network calculations. 
+The following is the list of required libraries and programs, as well as the version on which it was tested (in parentheses).
+* [Python](https://www.python.org/) (3.6)
+* [reduce](http://kinemage.biochem.duke.edu/software/reduce.php) (3.23). To add protons to proteins. 
+* [MSMS](http://mgltools.scripps.edu/packages/MSMS/) (2.6.1). To compute the surface of proteins. 
+* [BioPython](https://github.com/biopython/biopython) (1.66). To parse PDB files. 
+* [PyMesh](https://github.com/PyMesh/PyMesh) (0.1.14). To handle ply surface files, attributes, and to regularize meshes.
+* PDB2PQR (2.1.1), multivalue, and [APBS](http://www.poissonboltzmann.org/) (1.5). These programs are necessary to compute electrostatics charges.
+* [Open3D](https://github.com/IntelVCL/Open3D) (0.5.0.0). Mainly used for RANSAC alignment.
+* [Tensorflow](https://www.tensorflow.org/) (1.9). Use to model, train, and evaluate the actual neural networks. Models were trained and evaluated on a NVIDIA Tesla K40 GPU.
+* [Pymol](https://pymol.org/2/) (2.5.0). This optional program allows one to visualize surface files.
+
+## Installation with Docker
+
 ## Step-by-step example
 
 To reproduce the experiments in the paper, the entire datasets for the human proteome consume several terabytes. We will test MaSIF-mimicry using one example between mTOR and Ikaros.

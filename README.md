@@ -42,6 +42,22 @@ The following is the list of required libraries and programs, as well as the ver
 
 ## Installation with Docker
 
+MaSIF-mimicry has been tested on Linux. To run the mimicry pipeline, first clone the official MaSIF-mimicry repository and then clone this repository inside it. 
+
+
+MaSIF is written in Python and does not require compilation. Since MaSIF relies on a few external programs (MSMS, APBS) and libraries (PyMesh, Tensorflow, Scipy, Open3D), we strongly recommend you use the Dockerfile and Docker container. Setting up the environment should take a few minutes only.
+```
+git clone https://github.com/LPDI-EPFL/masif_seed.git
+cd masif_seed
+git clone https://github.com/xiaosh9527/masif_seed_mimicry.git
+cd masif_seed_mimicry
+# Build the docker container (this may take some minutes)
+docker build . -t masif-mimicry 
+cd ..
+# Initialize the docker container terminal
+docker run --name masif -it -v $(pwd):/workspace -w /workspace masif_mimicry
+```
+
 ## Step-by-step example
 
 To reproduce the experiments in the paper, the entire datasets for the human proteome consume several terabytes. We will test MaSIF-mimicry using one example between mTOR and Ikaros.

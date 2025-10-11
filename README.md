@@ -38,7 +38,7 @@ The following is the list of required libraries and programs, as well as the ver
 * [Tensorflow](https://www.tensorflow.org/) (1.9). Use to model, train, and evaluate the actual neural networks. Models were trained and evaluated on a NVIDIA Tesla K40 GPU.
 * [Pymol](https://pymol.org/2/) (2.5.0). This optional program allows one to visualize surface files.
 * [python-igraph](https://igraph.org/python/) (0.9.6). Used in pae_to_domain package to split AlphaFold (AF) models into individual domains. Only needed if you want to process AF models.
-* [pae_to_domain](https://github.com/tristanic/pae_to_domains). Code used to split AF models into individual domains based on PAE values. Only needed if you want to process AF models.
+* [pae_to_domain](https://github.com/tristanic/pae_to_domains). Code used to split AF models into individual domains based on Predicted Aligned Error (PAE) values. Only needed if you want to process AF models.
 
 ## Installation with Docker
 

@@ -52,7 +52,7 @@ RUN make install
 # Install python libraries
 RUN pip3 install matplotlib 
 RUN pip3 install ipython Biopython scikit-learn tensorflow==1.12 networkx open3d==0.8.0.0 dask==1.2.2 packaging
-RUN pip3 install python-igraph==0.9.6
+RUN pip3 install python-igraph==0.9.6 requests==2.27.1 pandas==1.1.5
 
 # Clone masif
 WORKDIR /

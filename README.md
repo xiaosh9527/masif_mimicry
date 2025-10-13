@@ -77,36 +77,27 @@ This will generate truncated structural domains from the original full-length AF
 >
 > Warning: The current script [`domain_split.py`](scripts/domain_split.py), called by [`process_af_model.sh`](scripts/process_af_model.sh), uses the version v6 because v4 is no longer supported for download using the Uniprot ID.
 
-Below, we use one of the mTOR domains as an example. 
-In case where multiple domains are generated, the same procedure must be applied to all.
-Now precompute the features for this protein domain, including the geodesic coordinates: 
+Below, we use one of the mTOR domains as an example. To process a fragment we will use the [`preprocess_pdb.sh`](preprocess_pdb.sh) script, which runs the following tasks:
+1. Preprocess the PDB file (add hydrogens, compute surface with MSMS, compute geometric and chemical features...)
+2. Precompute the MaSIF-site features
+3. Precompute the MaSIF-search features
+4. Predict interface sites with MaSIF-site
+5. Compute MaSIF descriptors
+6. Copy files required for mimicry search to output directory
 
 ```
-./data_precompute_patches_one.sh P42345-F1-dom-01_A
+# Assuming you are running inside the docker container...
+bash /workspace/masif_seed_mimicry/preprocess_pdb.sh input/fragments/P42345-F1-dom-01.pdb P42345-F1-dom-01_A -o output/
 ```
+> Note: In cases where multiple domains are generated, the same procedure must be applied to all.
 
-Finally, compute the MaSIF-site prediction and the MaSIF-search descriptors. 
+Once the site predictions and descriptors on `P42345-F1-dom-01_A` have been computed, we can focus on the target. 
+The features, MaSIF-site and MaSIF-search descriptors must be computed as well for the target, as well as a surface with per-vertex coloring. 
 
-```
-./predict_site.sh P42345-F1-dom-01_A
-./compute_descriptors.sh P42345-F1-dom-01_A
-```
-
-Once the site predictions and descriptors on `P42345-F1-dom-01_A` have been computed, we 
-can focus on the target. 
 
 ```
-cd ../../../
-cd masif_mimicry/data/test/
-```
-
-The features, MaSIF-site and MaSIF-search descriptors must be computed as well for the target, 
-as well as a surface with per-vertex coloring. 
-
-```
-./data_precompute_patches_one.sh 6h0g_C_B ./input/6h0g.pdb
-./predict_site.sh 6h0g_C_B
-./compute_descriptors.sh 6h0g_C_B
+cd ../../../masif_seed_mimicry/data/test/
+bash /workspace/masif_seed_mimicry/preprocess_pdb.sh input/6h0g.pdb 6h0g_C_B -o output/
 ```
 
 Finally, run the script to search for a surface patch in mTOR that mimics the ZNF692 degron interface. 

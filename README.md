@@ -92,8 +92,7 @@ bash /workspace/masif_seed_mimicry/preprocess_pdb.sh input/fragments/P42345-F1-d
 > Note: In cases where multiple domains are generated, the same procedure must be applied to all.
 
 Once the site predictions and descriptors on `P42345-F1-dom-01_A` have been computed, we can focus on the target. 
-The features, MaSIF-site and MaSIF-search descriptors must be computed as well for the target, as well as a surface with per-vertex coloring. 
-
+The features, MaSIF-site and MaSIF-search descriptors must be computed as well for the target, as well as a surface with per-vertex coloring.
 
 ```
 cd ../../../masif_seed_mimicry/data/test/

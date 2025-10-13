@@ -21,7 +21,7 @@ This repository contains code to perform the experiments in _Mapping the latent 
 
 MaSIF-seed has been tested on Linux, and it is recommended to run on an x86-based linux Docker container. 
 
-Currently, MaSIF takes a few seconds to preprocess every protein. We find the main bottleneck to be the APBS computation for surface charges, which can likely be optimized. Nevertheless, we recommend a distributed cluster to preprocess the data for large datasets of proteins.
+Currently, MaSIF takes a few seconds to preprocess every protein. We find the main bottleneck to be the APBS computation for surface charges, which can likely be optimized. Nevertheless, we recommend a distributed CPU cluster to preprocess the data for large datasets of proteins.
 
 ### Software requirements
 

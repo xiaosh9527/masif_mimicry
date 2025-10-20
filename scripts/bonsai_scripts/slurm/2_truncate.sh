@@ -10,7 +10,7 @@
 # 2_truncate.sh
 # SLURM script to calculate optimal truncation window using EvoEF2
 # and re-calculate metrics on truncated structures.
-# Submit this job using sbatch --array=1-$N_ARRAY 2_truncate.sh <TRUNC_ROOT> <TRUNC_LENGTH> <LIGAND> <N_ARRAY>
+# Submit this job using sbatch --array=1-$N_ARRAY 2_truncate.sh <TRUNC_ROOT> <TRUNC_LENGTH> <LIGAND> <N_ARRAY> <INPUT_SUBSETS_DIR>
 # to launch parallel array jobs.
 
 ########################################
@@ -20,6 +20,7 @@ TRUNC_ROOT=$1
 TRUNC_LENGTH=$2
 LIGAND=$3
 N_ARRAY=$4
+INPUT_SUBSETS_DIR=$5
 
 #-------------------------------------------------------------
 # Path to the truncation and processing python scripts (relative to repo root)
@@ -35,7 +36,7 @@ TRUNC_DIR=${TRUNC_ROOT}/truncate
 TEMP_DIR=${TRUNC_ROOT}/truncate/temp
 TRUNC_SUBSET_DIR=${TRUNC_ROOT}/truncate/subset
 
-#SUBSET_DIR=${TRUNC_ROOT}/subset
+# Input directory is now the postprocessed subsets directory
 PROC_OUTPUT_DIR=${TRUNC_ROOT}/proc_subset
 
 mkdir -p "$TRUNC_DIR" "$TEMP_DIR" "$TRUNC_SUBSET_DIR" "$PROC_OUTPUT_DIR"
@@ -45,7 +46,8 @@ mkdir -p "$TRUNC_DIR" "$TEMP_DIR" "$TRUNC_SUBSET_DIR" "$PROC_OUTPUT_DIR"
 ARRAY_ID=${SLURM_ARRAY_TASK_ID}
 
 # Input subset CSV containing only the rows for this ARRAY_ID.
-INPUT_SUBSET="${TRUNC_ROOT}/input/input_subset_${ARRAY_ID}.csv"
+# Use postprocessed subset files directly instead of re-split input files
+INPUT_SUBSET="${INPUT_SUBSETS_DIR}/postprocessed_scores_${ARRAY_ID}.csv"
 
 # Truncated subset CSV with a new header column "trunc_binder_path".
 TRUNC_SUBSET="${TRUNC_SUBSET_DIR}/subset_${ARRAY_ID}.csv"

@@ -54,20 +54,6 @@ jobid_postprocessing=$(sbatch --array 1-${N_ARRAY} ${POSTPROCESS_SCRIPT} \
                     ${postprocess_pdb_paths} ${LIGAND} ${TARGET_PDB_PATH} ${N_ARRAY} ${POSTPROCESS_DIR} | awk '{print $4}')
 echo "submitted postprocessing job array with job ID: ${jobid_postprocessing}"
 
-
-# submit gather job to combine the postprocessed scores into a single csv file
-jobid_gather=$(sbatch --dependency=afterok:$jobid_postprocessing ${GATHER_SCRIPT} \
-                    ${POSTPROCESS_DIR}/subsets "postprocessed_scores_*.csv" ${POSTPROCESS_DIR}/postprocessed_scores.csv | awk '{print $4}')
-echo "submitted gather job with job ID: ${jobid_gather}"
-
-########################################################
-### Truncation ###
-########################################################
-
-### Note:
-### Postprocessing script identifies the binder interface residues, which are required for truncation and rescoring. 
-### [Optional] Filter hits based on postprocessing metrics now, or proceed to truncation and filter at the end.
-
 # -------- 2. Calculate optimal truncation window and re-calculate metrics on truncated structures --------
 echo ""
 echo "--------------------------------"
@@ -75,21 +61,14 @@ echo "Generating SLURM script for truncation and rescoring..."
 echo "--------------------------------"
 echo ""
 
-# Generate the input_csv and the .slurm script for truncation and rescoring:
+# Generate the truncation directory and use postprocessed subset files directly
 mkdir -p ${TRUNC_DIR}
-mkdir -p ${TRUNC_DIR}/input
-# Use the gathered postprocessing scores directly as truncation input
-postprocess_scores_csv="${POSTPROCESS_DIR}/postprocessed_scores.csv"
-trunc_input_csv="${postprocess_scores_csv}"
+# Use postprocessed subset files directly as input for truncation
+postprocess_subsets_dir="${POSTPROCESS_DIR}/subsets"
 
-
-# split the input_postprocess_scores.csv into N_ARRAY subsets
-jobid_split=$(sbatch --dependency=afterok:$jobid_gather ${SPLIT_SCRIPT} ${trunc_input_csv} ${N_ARRAY} ${TRUNC_DIR}/input input_subset | awk '{print $4}')
-echo "submitted split job with job ID: ${jobid_split}"
-
-# Submit this job using sbatch --array=1-$N_ARRAY 2_truncate.sh <TRUNC_DIR> <TRUNC_LENGTH> <LIGAND> <N_ARRAY>
-jobid_truncate=$(sbatch --dependency=afterok:$jobid_split --array 1-${N_ARRAY} ${TRUNCATE_SCRIPT} \
-                    ${TRUNC_DIR} ${TRUNC_LENGTH} ${LIGAND} ${N_ARRAY} | awk '{print $4}')
+# Submit truncation job array using postprocessed subset files directly
+jobid_truncate=$(sbatch --dependency=afterok:$jobid_postprocessing --array 1-${N_ARRAY} ${TRUNCATE_SCRIPT} \
+                    ${TRUNC_DIR} ${TRUNC_LENGTH} ${LIGAND} ${N_ARRAY} ${postprocess_subsets_dir} | awk '{print $4}')
 echo "submitted truncation job array with job ID: ${jobid_truncate}"
 
 # gather the truncated scores into a single csv file

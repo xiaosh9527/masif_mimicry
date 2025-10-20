@@ -35,8 +35,6 @@ N_ARRAY=5    # number of array jobs for postprocessing and truncation
 ########################################################
 ### Postprocessing ###
 ########################################################
-
-# -------- 1. Calculate postprocessing metrics --------
 echo ""
 echo "--------------------------------"
 echo "Generating SLURM script for postprocessing..."
@@ -54,7 +52,9 @@ jobid_postprocessing=$(sbatch --array 1-${N_ARRAY} ${POSTPROCESS_SCRIPT} \
                     ${postprocess_pdb_paths} ${LIGAND} ${TARGET_PDB_PATH} ${N_ARRAY} ${POSTPROCESS_DIR} | awk '{print $4}')
 echo "submitted postprocessing job array with job ID: ${jobid_postprocessing}"
 
-# -------- 2. Calculate optimal truncation window and re-calculate metrics on truncated structures --------
+########################################################
+### Truncation ###
+########################################################
 echo ""
 echo "--------------------------------"
 echo "Generating SLURM script for truncation and rescoring..."

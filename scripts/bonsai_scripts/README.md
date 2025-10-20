@@ -14,16 +14,16 @@ The pipeline consists of several interconnected components:
 
 ## Usage Instructions
 
-1. **Setup**: Edit `scripts/config.yaml` with your system paths and executables
+1. **Setup**: Edit `scripts/bonsai_scripts/python/config.yaml` with your system paths and executables
 
-2. **Configure Workflow**: Edit parameters in `postprocessing_truncation_workflow.sh`:
+2. **Configure Workflow**: Edit parameters in `scripts/bonsai_scripts/postprocessing_truncation_workflow.sh`:
    - Set `WORK_DIR`, `BINDER_DIR`, `TARGET_PDB_PATH`
    - Configure `LIGAND` and `TRUNC_LENGTH`
-   - Set `DRY_RUN=false` to submit jobs
+   - Optionally adjust `N_ARRAY`
 
-3. **Run Pipeline**: Submit the workflow script:
+3. **Run Pipeline**: Launch the workflow (it submits SLURM jobs internally):
    ```bash
-   sbatch postprocessing_truncation_workflow.sh
+   bash scripts/bonsai_scripts/postprocessing_truncation_workflow.sh
    ```
 
 4. **Filter Results**: Run the R filtering script:
@@ -33,7 +33,7 @@ The pipeline consists of several interconnected components:
 
 5. **Get Sequences**: Fetch FASTA sequences for final candidates:
    ```bash
-   python3 fetch_fasta_batch.py \
+   python3 scripts/bonsai_scripts/python/fetch_fasta_batch.py \
        --input R/results/proc_trunc_86_6H0F_C_B_250325_filtered.csv \
        --output R/results/proc_trunc_86_6H0F_C_B_250325_filtered_seq.csv
    ```
@@ -63,7 +63,7 @@ The pipeline consists of several interconnected components:
 
 ### 1. Main Workflow Script: `postprocessing_truncation_workflow.sh`
 
-This is the master script that orchestrates the entire pipeline:
+This is the master script that orchestrates the entire pipeline via SLURM helper scripts:
 
 **Key Parameters:**
 - `WORK_DIR`: Working directory for storing results
@@ -71,18 +71,17 @@ This is the master script that orchestrates the entire pipeline:
 - `TARGET_PDB_PATH`: Target protein PDB file
 - `LIGAND`: Ligand chain and name (e.g., "B_Y70")
 - `TRUNC_LENGTH`: Maximum amino acid length for truncated structures (default: 86)
-- `DRY_RUN`: If true, generates SLURM scripts only; if false, submits jobs
 
 **Workflow Steps:**
 1. **Postprocessing Phase**: 
-   - Generates SLURM job array using `postprocess_wrapper.py`
-   - Calculates interface metrics, SASA values, clash counts, and structural properties
+   - Submits array job `slurm/1_postprocessing.sh` to compute metrics
+   - Gathers subset CSVs with `slurm/gather.sh`
    - Outputs: `{WORK_DIR}/postprocess/postprocessed_scores.csv`
 
 2. **Truncation Phase**:
-   - Generates SLURM job array using `EvoEF2_trunc_proc_wrapper.py`
-   - Finds optimal truncation windows using EvoEF2 folding energy
-   - Re-calculates metrics on truncated structures
+   - Splits input with `slurm/split.sh`
+   - Submits array job `slurm/2_truncate.sh` (EvoEF2 truncation + reprocessing)
+   - Gathers processed subset CSVs with `slurm/gather.sh`
    - Outputs: `{WORK_DIR}/Truncate_{trunc_length}/truncated_scores.csv`
 
 ### 2. Scripts Directory (`/scripts/`)
@@ -109,15 +108,12 @@ This is the master script that orchestrates the entire pipeline:
 - Computes difference metrics between original and truncated structures
 - Extracts EvoEF2 scores from truncated PDB filenames
 
-#### Wrapper Scripts:
+#### SLURM Helper Scripts:
 
-**`postprocess_wrapper.py`**: Generates SLURM job arrays for postprocessing
-- Distributes PDB files across array tasks
-- Creates parallel processing scripts for scalability
-
-**`EvoEF2_trunc_proc_wrapper.py`**: Generates SLURM job arrays for truncation
-- Combines truncation and postprocessing into single job arrays
-- Manages intermediate file creation and cleanup
+**`slurm/1_postprocessing.sh`**: Submits array jobs for postprocessing
+**`slurm/2_truncate.sh`**: Submits array jobs for truncation + reprocessing
+**`slurm/gather.sh`**: Concatenates subset CSVs into a single CSV
+**`slurm/split.sh`**: Splits a large CSV into N subsets with header preserved
 
 #### Utility Scripts:
 

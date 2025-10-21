@@ -20,8 +20,10 @@ TARGET_PDB=$3
 N_ARRAY=$4 # total number of array jobs is needed to split the pdb paths into subsets
 OUT_DIR=$5
 
+root=$(git rev-parse --show-toplevel)
+
 # Path to the postprocessing python script (relative to repo root)
-POSTPROCESS_SCRIPT="./scripts/bonsai_scripts/python/postprocess_masif_mimicry.py"
+POSTPROCESS_SCRIPT="$root/scripts/bonsai_scripts/python/postprocess_masif_mimicry.py"
 
 #-------------------------------------------------------------
 # Extract pdb paths corresponding to this array task
@@ -43,6 +45,7 @@ echo "$PDB_PATHS"
 mkdir -p $OUT_DIR/subsets
 OUTPUT_CSV=$OUT_DIR/subsets/postprocessed_scores_${ARRAY_ID}.csv
 
+conda activate bonsai
 # Run the Python script with the selected pdb paths
 python3 $POSTPROCESS_SCRIPT \
     --pdb_paths $PDB_PATHS \

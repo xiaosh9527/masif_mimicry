@@ -51,7 +51,7 @@ from rdkit import Chem
 from Bio.PDB import PDBParser
 from Bio.PDB.SASA import ShrakeRupley
 from Bio.PDB.DSSP import DSSP
-from Bio.PDB.Polypeptide import three_to_one  # for sequence extraction
+from Bio.PDB.Polypeptide import protein_letters_3to1  # for sequence extraction
 from Bio import pairwise2  # for alignment
 from Bio.PDB.NeighborSearch import NeighborSearch
 from Bio.PDB import StructureBuilder
@@ -318,7 +318,7 @@ def compute_binder_interface_metrics(binder_struct, target_struct, binder_pdb_pa
                         if res.id[0] != " ":
                             continue
                         try:
-                            aa = three_to_one(res.get_resname())
+                            aa = protein_letters_3to1(res.get_resname())
                         except Exception:
                             continue
                         binder_seq += aa

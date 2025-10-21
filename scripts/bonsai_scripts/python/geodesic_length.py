@@ -2,7 +2,7 @@
 import argparse
 import numpy as np
 import networkx as nx
-from skimage.morphology import skeletonize_3d
+from skimage.morphology import skeletonize
 from scipy.ndimage import median_filter
 from Bio.PDB import PDBParser
 
@@ -142,7 +142,7 @@ def main():
     
     object_volume = np.sum(voxel_grid) * (spacing**3)
     
-    skeleton = skeletonize_3d(smoothed_binary)
+    skeleton = skeletonize(smoothed_binary)
     longest_voxel_path, geodesic_length = longest_path_skeleton(skeleton)
     normalized_length = geodesic_length / (object_volume ** (1/3)) if geodesic_length > 0 else 0
     

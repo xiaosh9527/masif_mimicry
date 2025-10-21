@@ -22,11 +22,14 @@ LIGAND=$3
 N_ARRAY=$4
 INPUT_SUBSETS_DIR=$5
 
+root=$(git rev-parse --show-toplevel)
+
 #-------------------------------------------------------------
 # Path to the truncation and processing python scripts (relative to repo root)
-TRUNC_SCRIPT="./scripts/bonsai_scripts/python/EvoEF2_truncate.py"
-PROC_SCRIPT="./scripts/bonsai_scripts/python/proc_trunc_masif_mimicry.py"
+TRUNC_SCRIPT="$root/scripts/bonsai_scripts/python/EvoEF2_truncate.py"
+PROC_SCRIPT="$root/scripts/bonsai_scripts/python/proc_trunc_masif_mimicry.py"
 
+conda activate bonsai
 
 ########################################
 # Generate directories and paths

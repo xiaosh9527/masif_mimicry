@@ -28,7 +28,7 @@ from tqdm import tqdm
 from Bio.PDB import PDBParser
 from Bio.PDB.SASA import ShrakeRupley
 from Bio.PDB.DSSP import DSSP
-from Bio.PDB.Polypeptide import three_to_one  # for sequence extraction
+from Bio.PDB.Polypeptide import protein_letters_3to1  # for sequence extraction
 from Bio import pairwise2  # for alignment
 from Bio.PDB.NeighborSearch import NeighborSearch  # for efficient spatial searching
 from Bio.PDB import StructureBuilder
@@ -295,8 +295,9 @@ def compute_binder_interface_metrics(binder_struct, target_struct, binder_pdb_pa
                         if res.id[0] != " ":
                             continue
                         try:
-                            aa = three_to_one(res.get_resname())
-                        except Exception:
+                            aa = protein_letters_3to1[res.get_resname()]
+                        except Exception as e:
+                            print(f"Error mapping residue {res.get_resname()}: {e}")
                             continue
                         binder_seq += aa
                         residue_mapping[(chain.id, res.id)] = seq_index
@@ -464,8 +465,7 @@ def compute_binder_interface_metrics(binder_struct, target_struct, binder_pdb_pa
                 binder_iface_ss = "_".join(ss_map.get(res.id[1], 'L') for res in iface_residues if res.id[0] == " ")
                 metrics['binder_iface_ss'] = binder_iface_ss
             except Exception as e:
-                if debug:
-                    print(f"Error computing STRIDE-based interface metrics: {e}")
+                print(f"Error computing STRIDE-based interface metrics: {e}")
                 metrics['binder_iface_n_ss'] = None
                 metrics['binder_iface_structured'] = None
                 metrics['binder_iface_ss'] = None

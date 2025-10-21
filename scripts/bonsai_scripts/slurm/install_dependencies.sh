@@ -2,6 +2,8 @@
 
 # Install these dependencies in the root directory of the repository
 # before running the postprocessing and truncation pipeline
+root=$(git rev-parse --show-toplevel)
+cd $root
 
 #--------------------------------
 # Installation of EvoEF2

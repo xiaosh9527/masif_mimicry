@@ -13,15 +13,15 @@
 # -------- Define paths and parameters --------
 
 ### Parameters:
-LIGAND="B_Y70"   # ligand chain and name
+LIGAND="C_A1B"   # ligand chain and name
 TRUNC_LENGTH=86  # maximum amino acid length of the truncated structures
 
 ### Data paths:
-WORK_DIR="/scratch/ymeng/MaSIF_mimicry_manuscript/6H0F_C_B" # Working directory to store results for filtering and truncating MaSIF results
+WORK_DIR="/scratch/shxiao/9dww_P_C_hp_afdb_merizo_split_search_0.4_cutoff_v2/top_hits" # Working directory to store results for filtering and truncating MaSIF results
 POSTPROCESS_DIR="${WORK_DIR}/postprocess"                   # result of postprocessing metrics (default to a subdirectory of the working directory)
 TRUNC_DIR="${WORK_DIR}/Truncate_${TRUNC_LENGTH}"            # result of truncation and rescoring metrics (default to a subdirectory of the working directory)
-BINDER_DIR="${WORK_DIR}/matched_proteins"                   # Directory containing the mimicry matched protein .pdb files from MaSIF mimicry 
-TARGET_PDB_PATH="${WORK_DIR}/target/6H0F_B.pdb"             # Target .pdb file
+BINDER_DIR="${WORK_DIR}"                   # Directory containing the mimicry matched protein .pdb files from MaSIF mimicry 
+TARGET_PDB_PATH="${WORK_DIR}/target/9dww_C.pdb"             # Target .pdb file
 
 ### Script paths: Now defined relative to repo dir
 GATHER_SCRIPT="./scripts/bonsai_scripts/slurm/gather.sh"

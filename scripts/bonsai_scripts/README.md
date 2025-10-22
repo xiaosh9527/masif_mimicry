@@ -14,33 +14,33 @@ The pipeline consists of several interconnected components:
 
 ## Usage Instructions
 
-1. **Setup**: Edit `scripts/config.yaml` with your system paths and executables
-
-2. **Configure Workflow**: Edit parameters in `postprocessing_truncation_workflow.sh`:
-   - Set `WORK_DIR`, `BINDER_DIR`, `TARGET_PDB_PATH`
-   - Configure `LIGAND` and `TRUNC_LENGTH`
-   - Set `DRY_RUN=false` to submit jobs
-
-3. **Run Pipeline**: Submit the workflow script:
+1. **Install Dependencies**: Run the dependency installation script:
    ```bash
-   sbatch postprocessing_truncation_workflow.sh
+   bash scripts/bonsai_scripts/slurm/install_dependencies.sh
    ```
 
-4. **Filter Results**: Run the R filtering script:
+2. **Setup**: Edit `scripts/bonsai_scripts/python/config.yaml` with your system paths and executables
+
+3. **Configure Workflow**: Edit parameters in `scripts/bonsai_scripts/postprocessing_truncation_workflow.sh`:
+   - Set `WORK_DIR`, `BINDER_DIR`, `TARGET_PDB_PATH`
+   - Configure `LIGAND` and `TRUNC_LENGTH`
+   - Optionally adjust `N_ARRAY`
+
+4. **Run Pipeline**: Launch the workflow (it submits SLURM jobs internally):
    ```bash
-   Rscript R/MaSIF_mimicry_filtering_workflow.R
+   bash scripts/bonsai_scripts/postprocessing_truncation_workflow.sh
    ```
 
 5. **Get Sequences**: Fetch FASTA sequences for final candidates:
    ```bash
-   python3 fetch_fasta_batch.py \
-       --input R/results/proc_trunc_86_6H0F_C_B_250325_filtered.csv \
-       --output R/results/proc_trunc_86_6H0F_C_B_250325_filtered_seq.csv
+   python3 scripts/bonsai_scripts/python/fetch_fasta_batch.py \
+       --input R/results/proc_trunc_86_6H0F_C_B_250325.csv \
+       --output R/results/proc_trunc_86_6H0F_C_B_250325_seq.csv
    ```
 
 ## Pre-requisites
 
-- **DeepTMHMM**: Pre-computed predictions for human proteome sequences
+- **DeepTMHMM Database**: Pre-computed predictions for human proteome sequences using DeepTMHMM (https://www.biorxiv.org/content/10.1101/2022.04.08.487609v1) 
 - **STRIDE**: Executable for secondary structure calculation
 - **EvoEF2**: Executable for protein folding free energy calculation
 - **SLURM**: Job scheduler for parallel processing
@@ -55,15 +55,17 @@ The pipeline consists of several interconnected components:
 - `proc_trunc_86_6H0F_C_B_250325_filtered_seq.csv`: Final results with FASTA sequences 
 
 
-########################################################
+
+##
+
 # Details of each component of the workflow:
-########################################################
+
 
 ## Workflow Components
 
 ### 1. Main Workflow Script: `postprocessing_truncation_workflow.sh`
 
-This is the master script that orchestrates the entire pipeline:
+This is the master script that orchestrates the entire pipeline via SLURM helper scripts:
 
 **Key Parameters:**
 - `WORK_DIR`: Working directory for storing results
@@ -71,18 +73,16 @@ This is the master script that orchestrates the entire pipeline:
 - `TARGET_PDB_PATH`: Target protein PDB file
 - `LIGAND`: Ligand chain and name (e.g., "B_Y70")
 - `TRUNC_LENGTH`: Maximum amino acid length for truncated structures (default: 86)
-- `DRY_RUN`: If true, generates SLURM scripts only; if false, submits jobs
 
 **Workflow Steps:**
 1. **Postprocessing Phase**: 
-   - Generates SLURM job array using `postprocess_wrapper.py`
-   - Calculates interface metrics, SASA values, clash counts, and structural properties
-   - Outputs: `{WORK_DIR}/postprocess/postprocessed_scores.csv`
+   - Submits array job `slurm/1_postprocessing.sh` to compute metrics
+   - Outputs subset CSVs to `{WORK_DIR}/postprocess/subsets/`
 
 2. **Truncation Phase**:
-   - Generates SLURM job array using `EvoEF2_trunc_proc_wrapper.py`
-   - Finds optimal truncation windows using EvoEF2 folding energy
-   - Re-calculates metrics on truncated structures
+   - Submits array job `slurm/2_truncate.sh` using postprocessed subset files directly
+   - Performs EvoEF2 truncation + reprocessing on each subset
+   - Gathers processed subset CSVs with `slurm/gather.sh`
    - Outputs: `{WORK_DIR}/Truncate_{trunc_length}/truncated_scores.csv`
 
 ### 2. Scripts Directory (`/scripts/`)
@@ -109,15 +109,13 @@ This is the master script that orchestrates the entire pipeline:
 - Computes difference metrics between original and truncated structures
 - Extracts EvoEF2 scores from truncated PDB filenames
 
-#### Wrapper Scripts:
+#### SLURM Helper Scripts:
 
-**`postprocess_wrapper.py`**: Generates SLURM job arrays for postprocessing
-- Distributes PDB files across array tasks
-- Creates parallel processing scripts for scalability
-
-**`EvoEF2_trunc_proc_wrapper.py`**: Generates SLURM job arrays for truncation
-- Combines truncation and postprocessing into single job arrays
-- Manages intermediate file creation and cleanup
+**`slurm/1_postprocessing.sh`**: Submits array jobs for postprocessing
+**`slurm/2_truncate.sh`**: Submits array jobs for truncation + reprocessing
+**`slurm/gather.sh`**: Concatenates subset CSVs into a single CSV
+**`slurm/split.sh`**: Splits a large CSV into N subsets with header preserved
+**`slurm/install_dependencies.sh`**: Installs EvoEF2 and STRIDE dependencies
 
 #### Utility Scripts:
 

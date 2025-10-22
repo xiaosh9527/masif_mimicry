@@ -47,7 +47,7 @@ OUTPUT_CSV=$OUT_DIR/subsets/postprocessed_scores_${ARRAY_ID}.csv
 
 conda activate bonsai
 # Run the Python script with the selected pdb paths
-python3 $POSTPROCESS_SCRIPT \
+python $POSTPROCESS_SCRIPT \
     --pdb_paths $PDB_PATHS \
     -o "$OUTPUT_CSV" \
     --ligand "$LIGAND" \

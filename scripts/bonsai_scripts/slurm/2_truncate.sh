@@ -89,7 +89,7 @@ tail -n +2 "$INPUT_SUBSET" | while IFS= read -r line; do
     echo "Processing file: $mp with iface: $iface"
     
     # Run the EvoEF2_truncate.py script and capture the truncated file path.
-    trunc_path=$(python3 ${TRUNC_SCRIPT} \
+    trunc_path=$(python ${TRUNC_SCRIPT} \
         --clean \
         --input "$mp" \
         --iface "$iface" \
@@ -112,7 +112,7 @@ echo "Truncation for Array ID ${ARRAY_ID} completed. Final subset file: $TRUNC_S
 echo "Processing truncated subset: $TRUNC_SUBSET"
 echo "Writing processed output to: $PROC_TRUNC_OUTPUT"
 
-python3 ${PROC_SCRIPT} \
+python ${PROC_SCRIPT} \
     --input "${TRUNC_SUBSET}" \
     -o "${PROC_TRUNC_OUTPUT}" \
     --ligand "$LIGAND"

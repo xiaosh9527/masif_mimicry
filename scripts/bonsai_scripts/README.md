@@ -5,6 +5,8 @@ The workflow processes protein binder structures through multiple stages: postpr
 
 ## Overview
 
+![Pipeline for creating a bonsai library](../../img/bonsai.jpg)
+
 The pipeline consists of several interconnected components:
 
 1. **Postprocessing**: Calculate structural and interface metrics for binder structures

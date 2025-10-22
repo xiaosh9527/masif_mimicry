@@ -6,6 +6,18 @@ root=$(git rev-parse --show-toplevel)
 cd $root
 
 #--------------------------------
+# Installation of conda environment
+#--------------------------------
+
+echo "Creating bonsai conda environment"
+conda env create -f environment.yml
+
+echo "Activating bonsai conda environment"
+conda activate bonsai
+
+echo "Done"
+
+#--------------------------------
 # Installation of EvoEF2
 #--------------------------------
 # Clone from github repo

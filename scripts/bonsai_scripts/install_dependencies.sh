@@ -10,11 +10,10 @@ cd $root
 #--------------------------------
 
 echo "Creating bonsai conda environment"
-conda env create -f environment.yml
+conda env create -f $root/scripts/bonsai_scripts/environment.yml
 
 echo "Activating bonsai conda environment"
 conda activate bonsai
-
 echo "Done"
 
 #--------------------------------

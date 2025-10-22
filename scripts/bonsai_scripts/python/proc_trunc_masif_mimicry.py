@@ -57,6 +57,10 @@ from Bio.PDB.NeighborSearch import NeighborSearch
 from Bio.PDB import StructureBuilder
 import yaml
 import sys
+# Add the script directory to PATH to import geodesic_length
+script_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(script_dir)
+from geodesic_length import compute_geodesic_length
 
 # ------------------ Load configuration ------------------
 # Load configuration from config/config.yaml
@@ -68,7 +72,6 @@ paths_config = config['paths']
 deeptmhmm_dir = Path(paths_config['deeptmhmm_dir'])
 stride_exec = paths_config['stride_exec']
 
-from geodesic_length import compute_geodesic_length
 
 # ------------------ Helper Functions ------------------
 
@@ -319,6 +322,7 @@ def compute_binder_interface_metrics(binder_struct, target_struct, binder_pdb_pa
                         try:
                             aa = protein_letters_3to1(res.get_resname())
                         except Exception:
+                            aa = "-"
                             continue
                         binder_seq += aa
                         residue_mapping[(chain.id, res.id)] = seq_index

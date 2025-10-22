@@ -34,7 +34,12 @@ from Bio.PDB.NeighborSearch import NeighborSearch  # for efficient spatial searc
 from Bio.PDB import StructureBuilder
 import yaml
 import os
-from .geodesic_length import compute_geodesic_length
+import sys
+
+# Add the script directory to PATH to import geodesic_length
+script_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(script_dir)
+from geodesic_length import compute_geodesic_length
 
 # Load configuration from config/config.yaml
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.yaml")
@@ -296,7 +301,7 @@ def compute_binder_interface_metrics(binder_struct, target_struct, binder_pdb_pa
                         try:
                             aa = protein_letters_3to1[res.get_resname()]
                         except Exception as e:
-                            print(f"Error mapping residue {res.get_resname()}: {e}")
+                            aa = "-"
                             continue
                         binder_seq += aa
                         residue_mapping[(chain.id, res.id)] = seq_index

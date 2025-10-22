@@ -66,10 +66,9 @@ with open(CONFIG_PATH, 'r') as f:
 
 paths_config = config['paths']
 deeptmhmm_dir = Path(paths_config['deeptmhmm_dir'])
-python_path = paths_config['python_path']
 stride_exec = paths_config['stride_exec']
 
-geodesic_py_path = os.path.join(os.path.dirname(__file__), "geodesic_length.py")
+from geodesic_length import compute_geodesic_length
 
 # ------------------ Helper Functions ------------------
 
@@ -513,24 +512,6 @@ def compute_binder_interface_metrics(binder_struct, target_struct, binder_pdb_pa
 
 
 
-def compute_geodesic_lengths(pdb_path):
-    """Compute geodesic length metrics by calling an external script."""
-    try:
-        result = subprocess.run(
-            [python_path, geodesic_py_path, "--input", str(pdb_path), "--abs", "--norm"],
-            capture_output=True, text=True, check=True
-        )
-        lines = result.stdout.strip().splitlines()
-        if len(lines) >= 2:
-            return {
-                'abs_geodesic_length': float(lines[0]),
-                'norm_geodesic_length': float(lines[1]) * 1000,
-            }
-        else:
-            return {'abs_geodesic_length': None, 'norm_geodesic_length': None}
-    except Exception as e:
-        print(f"Error calling geodesic_py for {pdb_path}: {e}")
-        return {'abs_geodesic_length': None, 'norm_geodesic_length': None}
 
 # ------------------ Processing Function for Truncated Binder Metrics ------------------
 
@@ -598,7 +579,14 @@ def process_truncated_results(input_csv, ligand_def, sulfur_name, debug):
                 binder_metrics_trunc_renamed[new_key] = binder_metrics_trunc[key]
 
         # Recompute geodesic metrics for truncated binder.
-        geo_metrics_trunc = compute_geodesic_lengths(str(trunc_binder_path))
+        try:
+            geo_metrics_trunc = compute_geodesic_length(str(trunc_binder_path))
+            # Apply the same scaling factor as before (multiply by 1000)
+            if geo_metrics_trunc['norm_geodesic_length'] is not None:
+                geo_metrics_trunc['norm_geodesic_length'] = geo_metrics_trunc['norm_geodesic_length'] * 1000
+        except Exception as e:
+            print(f"Error computing geodesic length for {trunc_binder_path}: {e}")
+            geo_metrics_trunc = {'abs_geodesic_length': None, 'norm_geodesic_length': None}
         geo_metrics_trunc_renamed = {}
         if "abs_geodesic_length" in geo_metrics_trunc:
             geo_metrics_trunc_renamed["abs_geodesic_length_trunc"] = geo_metrics_trunc["abs_geodesic_length"]

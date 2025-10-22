@@ -34,6 +34,7 @@ from Bio.PDB.NeighborSearch import NeighborSearch  # for efficient spatial searc
 from Bio.PDB import StructureBuilder
 import yaml
 import os
+from .geodesic_length import compute_geodesic_length
 
 # Load configuration from config/config.yaml
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.yaml")
@@ -42,11 +43,9 @@ with open(CONFIG_PATH, 'r') as f:
 
 paths_config = config['paths']
 deeptmhmm_dir = Path(paths_config['deeptmhmm_dir'])
-python_path = paths_config['python_path']
 stride_exec = paths_config['stride_exec']
 
-geodesic_py_path = os.path.join(os.path.dirname(__file__), "geodesic_length.py")
-lig_desc_dist_score_py = os.path.join(os.path.dirname(__file__), "ligand_desc_dist_score.py")
+
 
 # ------------------ Helper Functions ------------------
 
@@ -491,24 +490,6 @@ def compute_binder_interface_metrics(binder_struct, target_struct, binder_pdb_pa
 
 
 
-def compute_geodesic_lengths(pdb_path):
-    """Compute geodesic length metrics by calling an external script."""
-    try:
-        result = subprocess.run(
-            [python_path, geodesic_py_path, "--input", str(pdb_path), "--abs", "--norm"],
-            capture_output=True, text=True, check=True
-        )
-        lines = result.stdout.strip().splitlines()
-        if len(lines) >= 2:
-            return {
-                'abs_geodesic_length': float(lines[0]),
-                'norm_geodesic_length': float(lines[1]),
-            }
-        else:
-            return {'abs_geodesic_length': None, 'norm_geodesic_length': None}
-    except Exception as e:
-        print(f"Error calling geodesic_length.py for {pdb_path}: {e}")
-        return {'abs_geodesic_length': None, 'norm_geodesic_length': None}
 
 # ------------------ Main Processing Function ------------------
 def process_results(
@@ -587,7 +568,11 @@ def process_results(
             })
             
         # --- Compute geodesic lengths ---
-        geodesic_metrics = compute_geodesic_lengths(pdb_path)
+        try:
+            geodesic_metrics = compute_geodesic_length(str(pdb_path))
+        except Exception as e:
+            print(f"Error computing geodesic length for {pdb_path}: {e}")
+            geodesic_metrics = {'abs_geodesic_length': None, 'norm_geodesic_length': None}
         match_info.update(geodesic_metrics)
 
         results.append(match_info)

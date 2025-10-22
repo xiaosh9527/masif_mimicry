@@ -1,4 +1,4 @@
-name: test
+name: bonsai
 channels:
   - conda-forge
   - defaults

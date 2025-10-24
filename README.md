@@ -15,7 +15,7 @@ This repository contains code to perform the experiments in _Mapping the latent 
 
 ## System and hardware requirements
 
-MaSIF-mimicry has been tested on Linux. To run the mimicry pipeline, first clone the official MaSIF-mimicry repository and then clone this repository inside it. 
+MaSIF-mimicry has been tested on Linux. To run the mimicry pipeline, first clone the official MaSIF-seed repository and then clone this repository inside it. Install docker for running masif-seed. 
 ```
 git clone https://github.com/LPDI-EPFL/masif_seed.git
 cd masif_seed

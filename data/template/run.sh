@@ -1,7 +1,5 @@
 #!/bin/bash
 
-conda activate masif
-
 masif_root=/work/lpdi/users/shxiao/masif_seed
 masif_db_root=$masif_root/masif
 masif_seed_root=$masif_root/masif_seed_search

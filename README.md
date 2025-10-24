@@ -19,6 +19,8 @@ MaSIF-mimicry has been tested on Linux. To run the mimicry pipeline, first clone
 ```
 git clone https://github.com/LPDI-EPFL/masif_seed.git
 cd masif_seed
+docker build . -t masif_seed 
+docker run -it -v $PWD:$PWD masif_seed
 git clone https://github.com/xiaosh9527/masif_seed_mimicry.git
 ```
 The required the software for running MaSIF-mimicry is the same as listed in the MaSIF-seed repository, wioth the exception of python-igraph >= 0.9.6 which is required for pae_to_domain package.
@@ -40,7 +42,7 @@ This will generate truncated structural domains from the original full-length AF
 Below, we use one of the mTOR domains as an example. In case where multiple domains are generated, the same procedure must be applied to all. Now precompute the features for this protein domain, including the geodesic coordinates: 
 
 ```
-./data_precompute_patches_one.sh P42345-F1-dom-01_A
+./data_prepare_one.sh P42345-F1-dom-01_A
 ```
 
 Finally, compute the MaSIF-site prediction and the MaSIF-search descriptors. 
@@ -55,14 +57,14 @@ can focus on the target.
 
 ```
 cd ../../../
-cd masif_mimicry/data/test/
+cd masif_mimicry/data/template/
 ```
 
 The features, MaSIF-site and MaSIF-search descriptors must be computed as well for the target, 
 as well as a surface with per-vertex coloring. 
 
 ```
-./data_precompute_patches_one.sh 6h0g_C_B ./input/6h0g.pdb
+./data_prepare_one.sh 6h0g_C_B ./input/6h0g.pdb
 ./predict_site.sh 6h0g_C_B
 ./compute_descriptors.sh 6h0g_C_B
 ```

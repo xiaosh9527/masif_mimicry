@@ -1,6 +1,6 @@
 #!/bin/bash
 
-source /work/lpdi/users/shxiao/masif_seed/load_masif_environment_jed.sh
+conda activate masif
 
 masif_root=/work/lpdi/users/shxiao/masif_seed
 masif_db_root=$masif_root/masif

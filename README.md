@@ -95,8 +95,8 @@ Once the site predictions and descriptors on `P42345-F1-dom-01_A` have been comp
 The features, MaSIF-site and MaSIF-search descriptors must be computed as well for the target, as well as a surface with per-vertex coloring.
 
 ```
-cd ../../../masif_seed_mimicry/data/test/
-bash /workspace/masif_seed_mimicry/preprocess_pdb.sh input/6h0g.pdb 6h0g_CB -o output/
+cd ../../../masif_mimicry/data/template/
+bash /workspace/masif_mimicry/preprocess_pdb.sh input/6h0g.pdb 6h0g_C_B -o output/
 ```
 
 Finally, run the script to search for a surface patch in mTOR that mimics the ZNF692 degron interface. 

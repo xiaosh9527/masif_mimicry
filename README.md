@@ -49,8 +49,8 @@ MaSIF is written in Python and does not require compilation. Since MaSIF relies 
 ```
 git clone https://github.com/LPDI-EPFL/masif_seed.git
 cd masif_seed
-git clone https://github.com/xiaosh9527/masif_seed_mimicry.git
-cd masif_seed_mimicry
+git clone https://github.com/xiaosh9527/masif_mimicry.git
+cd masif_mimicry
 # Build the docker container (this may take some minutes)
 docker build . -t masif_mimicry 
 cd ..
@@ -69,7 +69,7 @@ cd masif/data/
 mkdir masif_human_proteome
 cd masif_human_proteome
 git clone https://github.com/tristanic/pae_to_domains.git
-sh ../../../masif_seed_mimicry/scripts/process_af_model.sh P42345
+sh ../../../masif_mimicry/scripts/process_af_model.sh P42345
 ```
 
 This will generate truncated structural domains from the original full-length AF model. The same process can be applied to rest of the proteome proteins to generate a MaSIF human proteome database. 
@@ -87,7 +87,7 @@ Below, we use one of the mTOR domains as an example. To process a fragment we wi
 
 ```
 # Assuming you are running inside the docker container...
-bash /workspace/masif_seed_mimicry/preprocess_pdb.sh input/fragments/P42345-F1-dom-01.pdb P42345-F1-dom-01_A -o output/
+bash /workspace/masif_mimicry/preprocess_pdb.sh input/fragments/P42345-F1-dom-01.pdb P42345-F1-dom-01_A -o output/
 ```
 > Note: In cases where multiple domains are generated, the same procedure must be applied to all.
 

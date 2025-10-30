@@ -57,7 +57,7 @@ if [ -z $PDBFILE ]; then
 fi
 
 if [ -z $NAME_CHAIN ]; then
-    echo "[ERROR] Please provide the protein definition (as <PDBID_CHAINID>)"
+    echo "[ERROR] Please provide the protein definition as: <PDBID_CHAINID> (eg. XXXX_A, or join surface as XXXX_AB) or <PDBID_CHAINID1_CHAINID2> to process two chains separately (eg. XXXX_A_B)"
     exit 1
 fi
 
@@ -106,8 +106,18 @@ echo "[INFO] 1 - Starting triangulation"
 PPI_PAIR_ID=$NAME_CHAIN
 PDB_ID=$(echo $NAME_CHAIN| cut -d"_" -f1)
 CHAIN1=$(echo $NAME_CHAIN| cut -d"_" -f2)
+CHAIN2=$(echo $NAME_CHAIN| cut -d"_" -f3)
 cp $PDBFILE data_preparation/00-raw_pdbs/$PDB_ID\.pdb
-python -W ignore $MASIF_SOURCE/data_preparation/01-pdb_extract_and_triangulate.py $PDB_ID\_$CHAIN1 $LIGAND $SDFFILE $MOL2FILE
+
+if [ -z $CHAIN2 ]; then
+  echo "[INFO] Single chain detected: $CHAIN1"
+  python -W ignore $MASIF_SOURCE/data_preparation/01-pdb_extract_and_triangulate.py $PDB_ID\_$CHAIN1 $LIGAND $SDFFILE $MOL2FILE
+else
+  echo "[INFO] PPI pair detected: $CHAIN1 and $CHAIN2"
+  python -W ignore $MASIF_SOURCE/data_preparation/01-pdb_extract_and_triangulate.py $PDB_ID\_$CHAIN1 $LIGAND $SDFFILE $MOL2FILE
+  python -W ignore $MASIF_SOURCE/data_preparation/01-pdb_extract_and_triangulate.py $PDB_ID\_$CHAIN2 $LIGAND $SDFFILE $MOL2FILE
+fi
+
 return_code=$?
 echo "[INFO] 1 - Finished triangulation."
 

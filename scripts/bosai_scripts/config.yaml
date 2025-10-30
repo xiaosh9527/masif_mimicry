@@ -1,6 +1,0 @@
-paths:
-  deeptmhmm_dir: "/work/upthomae/Meng/hp_list_DeepTMHMM/out/" # path to pre-computed DeepTMHMM prediction on the DATA library
-  python_path: "python3" # use python3
-  stride_exec: "stride" # command to call stride executable
-  EvoEF2_dir: "~/EvoEF2" # path to EvoEF2 installation directory
-

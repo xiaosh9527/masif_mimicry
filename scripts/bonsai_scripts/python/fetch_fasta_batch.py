@@ -84,7 +84,7 @@ def main():
             trunc_seq = None
         truncated_seqs.append(trunc_seq)
 
-    df["turnc_sequence"] = truncated_seqs
+    df["trunc_sequence"] = truncated_seqs
     df.to_csv(args.output, index=False)
     print(f"Updated CSV file saved as '{args.output}'.")
 

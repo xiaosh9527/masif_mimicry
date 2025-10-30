@@ -1,64 +1,46 @@
 #!/usr/bin/env python3
 """
-proc_trunc_masif_hits.py
+postprocess_masif_mimicry.py
 
-This script processes a CSV table (created by postprocess_masif_hits.py) to compute structural and interface
-metrics for truncated binder PDB files. For each row, the target PDB (from target_path) and the truncated binder
-PDB (from trunc_binder_path) are loaded and analyzed. The target.vert file is generated using the matched_protein_path.
-Metrics computed for the truncated binder are renamed according to the mapping below:
-
-    Original                      Truncated
-    ---------------------------------------------------
-    ligand_binder_buried_SASA  ->  ligand_trunc_buried_SASA
-    binder_iface_n_resi       ->  trunc_iface_n_resi
-    binder_iface_plddt        ->  trunc_iface_plddt
-    binder_iface_residues     ->  trunc_iface_residues
-    binder_iface_intracellular->  trunc_iface_intracellular
-    binder_resi_start         ->  trunc_resi_start
-    binder_resi_end           ->  trunc_resi_end
-    binder_length             ->  trunc_length
-    binder_total_n_ss         ->  trunc_total_n_ss
-    binder_n_structured_ss    ->  trunc_n_structured_ss
-    binder_structured_percent ->  trunc_structured_percent
-    binder_iface_n_ss         ->  trunc_iface_n_ss
-    binder_iface_structured   ->  trunc_iface_structured
-    binder_iface_ss           ->  trunc_iface_ss
-    abs_geodesic_length       ->  abs_geodesic_length_trunc
-    norm_geodesic_length      ->  norm_geodesic_length_trunc
-
-In addition, new columns are added as differences between the truncated and original binder interface metrics:
-    - d_iface_n_resi
-    - d_iface_n_ss
-    - d_iface_structured
-
-A new metric, EvoEF2_score, is also extracted from the trunc_binder_path filename. For example, given:
-    /scratch/ymeng/MaSIF_search_3.6/8VLB_A_A_3JF_301/Truncate_86/out/Q8NA31-F1-dom-01_A_1465_101_186_-451.pdb
-the value "-451" (converted to a numeric value) is assigned to EvoEF2_score.
+This script processes a list of PDB files (binder structures) to compute various structural and interface metrics 
+for MaSIF grid search results. The metrics computed include clash counts, SASA metrics, interface metrics,
+geodesic lengths, and a ligand descriptor distance score computed by an external script.
 
 Usage:
-    python proc_trunc_masif_hits.py --input input.csv --out_csv_file output.csv [--ligand CHAIN_RESNAME] [--sulfur ATOM_NAME] [--debug]
+    python3 /scratch/ymeng/MaSIF_surface_mimicry/postprocess_masif_mimicry.py \
+        --pdb_paths /scratch/ymeng/MaSIF_surface_mimicry/6H0F_C_B_mimicry_binders/A0A0A0MRZ7-F1-dom-01.pdb \
+        --target_pdb_path /scratch/ymeng/MaSIF_surface_mimicry/Preprocess/input/6H0F_B_B_Y70_502/6H0F_B.pdb \
+        --out_csv_file /scratch/ymeng/MaSIF_surface_mimicry/out.csv \
+        --ligand B_Y70 \
+        --debug
+
+Author: Yanxiang Meng (10.3.2025)
 """
 
 from pathlib import Path
 from argparse import ArgumentParser
 import subprocess
-import math
-import os
+import math  
+from rdkit import Chem
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-from rdkit import Chem
 from Bio.PDB import PDBParser
 from Bio.PDB.SASA import ShrakeRupley
 from Bio.PDB.DSSP import DSSP
-from Bio.PDB.Polypeptide import three_to_one  # for sequence extraction
+from Bio.PDB.Polypeptide import protein_letters_3to1  # for sequence extraction
 from Bio import pairwise2  # for alignment
-from Bio.PDB.NeighborSearch import NeighborSearch
+from Bio.PDB.NeighborSearch import NeighborSearch  # for efficient spatial searching
 from Bio.PDB import StructureBuilder
 import yaml
+import os
 import sys
 
-# ------------------ Load configuration ------------------
+# Add the script directory to PATH to import geodesic_length
+script_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(script_dir)
+from geodesic_length import compute_geodesic_length
+
 # Load configuration from config/config.yaml
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.yaml")
 with open(CONFIG_PATH, 'r') as f:
@@ -66,10 +48,9 @@ with open(CONFIG_PATH, 'r') as f:
 
 paths_config = config['paths']
 deeptmhmm_dir = Path(paths_config['deeptmhmm_dir'])
-python_path = paths_config['python_path']
 stride_exec = paths_config['stride_exec']
 
-geodesic_py_path = os.path.join(os.path.dirname(__file__), "geodesic_length.py")
+
 
 # ------------------ Helper Functions ------------------
 
@@ -119,7 +100,7 @@ def merge_structures(target_struct, binder_struct, ligand=None):
     copy_residues(target_struct, out_struct, output_chain="T")
     copy_residues(binder_struct, out_struct, output_chain="B")
     if ligand is not None:
-        ligand_residue = extract_ligand_residue(target_struct, ligand["chain"], ligand["name"])
+        ligand_residue = extract_ligand_residue(target_struct, ligand_chain=ligand["chain"], ligand_name=ligand["name"])
         copy_residues([ligand_residue], out_struct, output_chain="L")
     return out_struct
 
@@ -128,8 +109,8 @@ def merge_binder_ligand(binder_struct, ligand_residue):
     builder = StructureBuilder.StructureBuilder()
     builder.init_structure('binder_ligand_complex')
     builder.init_model(0)
-    builder.init_chain("B")
-    builder.init_chain("L")
+    builder.init_chain("B")  # binder
+    builder.init_chain("L")  # ligand
     new_struct = builder.get_structure()[0]
     copy_residues(binder_struct, new_struct, output_chain="B")
     copy_residues([ligand_residue], new_struct, output_chain="L")
@@ -137,19 +118,20 @@ def merge_binder_ligand(binder_struct, ligand_residue):
 
 def compute_sasa_values(target_pdb, binder_pdb, ligand_def: dict = None):
     out = {}
+
     target = PDBParser(QUIET=True).get_structure('', target_pdb)[0]
     binder = PDBParser(QUIET=True).get_structure('', binder_pdb)[0]
     whole_complex = merge_structures(target, binder, ligand_def)
 
-    # Compute SASA for target
+    # Target
     ShrakeRupley().compute(target, level="R")
     out['target_sasa'] = sum(r.sasa for r in target.get_residues())
 
-    # Binder SASA
+    # Binder
     ShrakeRupley().compute(binder, level="R")
     out['binder_sasa'] = sum(r.sasa for r in binder.get_residues())
 
-    # Complex SASA
+    # Full Complex (target + binder [+ ligand])
     ShrakeRupley().compute(whole_complex, level="R")
     out['complex_sasa'] = sum(r.sasa for r in whole_complex.get_residues())
     target_residues_in_complex = list(whole_complex["T"].get_residues())
@@ -194,10 +176,9 @@ def compute_sasa_values(target_pdb, binder_pdb, ligand_def: dict = None):
 
 def get_contact_atoms(target_struct, ligand_def=None):
     """Extract heavy atoms from target (and ligand, if defined) for interface contact."""
-    contact_atoms = []
     if ligand_def is not None:
         ligand_res = extract_ligand_residue(target_struct, ligand_def["chain"], ligand_def["name"])
-        contact_atoms.extend([atom for atom in ligand_res if atom.element != 'H'])
+        contact_atoms = [atom for atom in ligand_res if atom.element != 'H']
         for chain in target_struct:
             for res in chain:
                 if res != ligand_res:
@@ -208,9 +189,9 @@ def get_contact_atoms(target_struct, ligand_def=None):
         contact_atoms = [atom for atom in target_struct.get_atoms() if atom.element != 'H']
     return contact_atoms
 
-
 def get_interface_residues(binder_struct, contact_atoms, cutoff=4.5):
-    """Return binder residues that have any heavy atom within the cutoff distance."""
+    """Return binder residues that have any heavy atom within the cutoff distance to any contact atom.
+       This version uses NeighborSearch for efficiency."""
     ns = NeighborSearch(contact_atoms)
     iface_residues = []
     for res in binder_struct.get_residues():
@@ -223,7 +204,7 @@ def get_interface_residues(binder_struct, contact_atoms, cutoff=4.5):
     return iface_residues
 
 def compute_iface_metrics(binder_struct, iface_residues):
-    """Compute average CA B-factor for interface residues."""
+    """Compute average B-factor for interface residues using only the alpha carbon (CA) atoms."""
     total_bfactor = 0.0
     count_atoms = 0
     for res in iface_residues:
@@ -318,8 +299,9 @@ def compute_binder_interface_metrics(binder_struct, target_struct, binder_pdb_pa
                         if res.id[0] != " ":
                             continue
                         try:
-                            aa = three_to_one(res.get_resname())
-                        except Exception:
+                            aa = protein_letters_3to1[res.get_resname()]
+                        except Exception as e:
+                            aa = "-"
                             continue
                         binder_seq += aa
                         residue_mapping[(chain.id, res.id)] = seq_index
@@ -487,8 +469,7 @@ def compute_binder_interface_metrics(binder_struct, target_struct, binder_pdb_pa
                 binder_iface_ss = "_".join(ss_map.get(res.id[1], 'L') for res in iface_residues if res.id[0] == " ")
                 metrics['binder_iface_ss'] = binder_iface_ss
             except Exception as e:
-                if debug:
-                    print(f"Error computing STRIDE-based interface metrics: {e}")
+                print(f"Error computing STRIDE-based interface metrics: {e}")
                 metrics['binder_iface_n_ss'] = None
                 metrics['binder_iface_structured'] = None
                 metrics['binder_iface_ss'] = None
@@ -513,225 +494,155 @@ def compute_binder_interface_metrics(binder_struct, target_struct, binder_pdb_pa
 
 
 
-def compute_geodesic_lengths(pdb_path):
-    """Compute geodesic length metrics by calling an external script."""
-    try:
-        result = subprocess.run(
-            [python_path, geodesic_py_path, "--input", str(pdb_path), "--abs", "--norm"],
-            capture_output=True, text=True, check=True
-        )
-        lines = result.stdout.strip().splitlines()
-        if len(lines) >= 2:
-            return {
-                'abs_geodesic_length': float(lines[0]),
-                'norm_geodesic_length': float(lines[1]) * 1000,
-            }
-        else:
-            return {'abs_geodesic_length': None, 'norm_geodesic_length': None}
-    except Exception as e:
-        print(f"Error calling geodesic_py for {pdb_path}: {e}")
-        return {'abs_geodesic_length': None, 'norm_geodesic_length': None}
 
-# ------------------ Processing Function for Truncated Binder Metrics ------------------
 
-def process_truncated_results(input_csv, ligand_def, sulfur_name, debug):
-    df = pd.read_csv(input_csv)
+# ------------------ Main Processing Function ------------------
+def process_results(
+    pdb_paths, 
+    target_pdb, 
+    ligand_def: dict = None, 
+    sulfur_name: str = None, 
+    recompute_clashes: bool = True, 
+    compute_sasa_flag: bool = True,
+    debug: bool = False
+):
     results = []
+    # Cache parsed structures to avoid re-parsing the same PDB file multiple times.
+    parsed_structures = {}
     parser = PDBParser(QUIET=True)
     
-    for idx, row in tqdm(df.iterrows(), total=len(df), desc="Processing CSV rows"):
-        # Get paths from CSV (ensuring they are absolute)
-        try:
-            target_path = Path(row['target_path']).resolve()
-            trunc_binder_path = Path(row['trunc_binder_path']).resolve()
-            matched_protein_path = Path(row['matched_protein_path']).resolve()
-        except Exception as e:
-            print(f"Error reading file paths in row {idx}: {e}")
+    # Parse the target structure from the user-provided path.
+    target_pdb = Path(target_pdb).resolve()
+    try:
+        target_struct = parser.get_structure('', str(target_pdb))[0]
+    except Exception as e:
+        print(f"Error parsing target structure {target_pdb}: {e}")
+        return pd.DataFrame(results)
+    
+    for pdb_path in tqdm(pdb_paths, desc="Processing PDB files"):
+        pdb_path = Path(pdb_path).resolve()
+        if not pdb_path.is_file():
+            print(f"Warning: {pdb_path} is not a valid file. Skipping.")
             continue
 
-        # Parse structures
+        # Parse binder structure.
+        if pdb_path not in parsed_structures:
+            try:
+                parsed_structures[pdb_path] = parser.get_structure('', str(pdb_path))[0]
+            except Exception as e:
+                print(f"Error parsing binder structure {pdb_path}: {e}")
+                continue
+        binder_struct = parsed_structures[pdb_path]
+
+        match_info = {}
+        match_info['matched_protein_path'] = str(pdb_path)
+        # Add target_path and ligand columns to the output.
+        match_info['target_path'] = str(target_pdb)
+        match_info['ligand'] = f"{ligand_def['chain']}_{ligand_def['name']}" if ligand_def is not None else None
+
+        if recompute_clashes:
+            match_info["clashes_heavy_strictness1"] = count_clashes(str(target_pdb), str(pdb_path), strictness=1.0)
+            match_info["clashes_heavy_strictness0.75"] = count_clashes(str(target_pdb), str(pdb_path), strictness=0.75)
+        if compute_sasa_flag:
+            match_info.update(compute_sasa_values(str(target_pdb), str(pdb_path), ligand_def=ligand_def))
+
+        binder_metrics = compute_binder_interface_metrics(binder_struct, target_struct, pdb_path, ligand_def, debug=debug)
+        match_info.update(binder_metrics)
+
+        if sulfur_name is not None and ligand_def is not None:
+            match_info.update({
+                **(lambda: 
+                    # Calculate distance from query sulfur atom to closest CB in binder structure.
+                    # (Retaining the same logic as before.)
+                    (lambda query:
+                        (
+                            lambda query_struct, target_struct:
+                                (
+                                    lambda c_betas:
+                                        {
+                                            "closest_c_beta": f"{c_betas[np.argmin(np.sqrt(np.sum((query['coord'] - np.stack([a.get_coord() for a in c_betas]))**2, axis=1)))]}" if c_betas else None,
+                                            "closest_c_beta_distance": np.min(np.sqrt(np.sum((query['coord'] - np.stack([a.get_coord() for a in c_betas]))**2, axis=1))) if c_betas else None
+                                        }
+                                    )( [atom for atom in target_struct.get_atoms() if atom.name == "CB"] )
+                                )( 
+                                    PDBParser(QUIET=True).get_structure("", str(target_pdb))[0]
+                                )
+                        )
+                    )({"pdb": str(target_pdb), "chain": ligand_def["chain"], "resname": ligand_def["name"], "atom_name": sulfur_name})
+                
+            })
+            
+        # --- Compute geodesic lengths ---
         try:
-            target_struct = parser.get_structure("", str(target_path))[0]
+            geodesic_metrics = compute_geodesic_length(str(pdb_path))
         except Exception as e:
-            print(f"Error parsing target structure {target_path}: {e}")
-            continue
-        try:
-            binder_struct = parser.get_structure("", str(trunc_binder_path))[0]
-        except Exception as e:
-            print(f"Error parsing truncated binder structure {trunc_binder_path}: {e}")
-            continue
+            print(f"Error computing geodesic length for {pdb_path}: {e}")
+            geodesic_metrics = {'abs_geodesic_length': None, 'norm_geodesic_length': None}
+        match_info.update(geodesic_metrics)
 
-        # Recompute clash metrics using truncated binder
-        clashes1 = count_clashes(str(target_path), str(trunc_binder_path), strictness=1.0)
-        clashes075 = count_clashes(str(target_path), str(trunc_binder_path), strictness=0.75)
-
-        # Recompute SASA metrics
-        sasa_metrics = compute_sasa_values(str(target_path), str(trunc_binder_path), ligand_def=ligand_def)
-        # Add new metric: trunc_sasa (SASA for the truncated binder structure)
-        sasa_metrics["trunc_sasa"] = sasa_metrics.get("binder_sasa", None)
-        # Rename ligand binder metric to truncated version if present.
-        if "ligand_binder_buried_SASA" in sasa_metrics:
-            sasa_metrics["ligand_trunc_buried_SASA"] = sasa_metrics.pop("ligand_binder_buried_SASA")
-
-        # Recompute binder interface metrics on truncated binder.
-        binder_metrics_trunc = compute_binder_interface_metrics(binder_struct, target_struct, trunc_binder_path, ligand_def, debug=debug)
-
-        # Rename binder interface metrics to new truncated column names.
-        mapping = {
-            'binder_iface_n_resi': 'trunc_iface_n_resi',
-            'binder_iface_plddt': 'trunc_iface_plddt',
-            'binder_iface_residues': 'trunc_iface_residues',
-            'binder_iface_intracellular': 'trunc_iface_intracellular',
-            'binder_resi_start': 'trunc_resi_start',
-            'binder_resi_end': 'trunc_resi_end',
-            'binder_length': 'trunc_length',
-            'binder_total_n_ss': 'trunc_total_n_ss',
-            'binder_n_structured_ss': 'trunc_n_structured_ss',
-            'binder_structured_percent': 'trunc_structured_percent',
-            'binder_iface_n_ss': 'trunc_iface_n_ss',
-            'binder_iface_structured': 'trunc_iface_structured',
-            'binder_iface_ss': 'trunc_iface_ss',
-        }
-        binder_metrics_trunc_renamed = {}
-        for key, new_key in mapping.items():
-            if key in binder_metrics_trunc:
-                binder_metrics_trunc_renamed[new_key] = binder_metrics_trunc[key]
-
-        # Recompute geodesic metrics for truncated binder.
-        geo_metrics_trunc = compute_geodesic_lengths(str(trunc_binder_path))
-        geo_metrics_trunc_renamed = {}
-        if "abs_geodesic_length" in geo_metrics_trunc:
-            geo_metrics_trunc_renamed["abs_geodesic_length_trunc"] = geo_metrics_trunc["abs_geodesic_length"]
-        if "norm_geodesic_length" in geo_metrics_trunc:
-            geo_metrics_trunc_renamed["norm_geodesic_length_trunc"] = geo_metrics_trunc["norm_geodesic_length"]
-
-        # Compute new difference metrics between truncated and original binder interface metrics.
-        # Original binder metrics are assumed to be in the CSV row.
-        d_iface_n_resi = None
-        d_iface_n_ss = None
-        d_iface_structured = None
-        try:
-            orig_iface_n_resi = float(row.get("binder_iface_n_resi", 0))
-            trunc_iface_n_resi = float(binder_metrics_trunc_renamed.get("trunc_iface_n_resi", 0))
-            d_iface_n_resi = trunc_iface_n_resi - orig_iface_n_resi
-        except Exception:
-            pass
-        try:
-            orig_iface_n_ss = float(row.get("binder_iface_n_ss", 0))
-            trunc_iface_n_ss = float(binder_metrics_trunc_renamed.get("trunc_iface_n_ss", 0))
-            d_iface_n_ss = trunc_iface_n_ss - orig_iface_n_ss
-        except Exception:
-            pass
-        try:
-            orig_iface_structured = float(row.get("binder_iface_structured", 0))
-            trunc_iface_structured = float(binder_metrics_trunc_renamed.get("trunc_iface_structured", 0))
-            d_iface_structured = trunc_iface_structured - orig_iface_structured
-        except Exception:
-            pass
-
-        # Combine new metrics into one dictionary.
-        new_metrics = {}
-        new_metrics["clashes_heavy_strictness1_trunc"] = clashes1
-        new_metrics["clashes_heavy_strictness0.75_trunc"] = clashes075
-        new_metrics.update(sasa_metrics)
-        new_metrics.update(binder_metrics_trunc_renamed)
-        new_metrics.update(geo_metrics_trunc_renamed)
-        new_metrics["d_iface_n_resi"] = d_iface_n_resi
-        new_metrics["d_iface_n_ss"] = d_iface_n_ss
-        new_metrics["d_iface_structured"] = d_iface_structured
-
-        # ---- NEW: Extract EvoEF2_score from trunc_binder_path filename ----
-        try:
-            basename = trunc_binder_path.name  # e.g., "Q8NA31-F1-dom-01_A_1465_101_186_-451.pdb"
-            evoef2_str = basename.rsplit("_", 1)[1].replace(".pdb", "")
-            new_metrics["EvoEF2_score"] = float(evoef2_str)
-        except Exception as e:
-            new_metrics["EvoEF2_score"] = None
-
-        # ---- NEW: Compute norm_EvoEF2_score as EvoEF2_score divided by trunc_length ----
-        try:
-            # Ensure both values are available and trunc_length is non-zero.
-            trunc_length = new_metrics.get("trunc_length")
-            evoef2_score = new_metrics.get("EvoEF2_score")
-            if evoef2_score is not None and trunc_length and trunc_length != 0:
-                new_metrics["norm_EvoEF2_score"] = evoef2_score / trunc_length
-            else:
-                new_metrics["norm_EvoEF2_score"] = None
-        except Exception:
-            new_metrics["norm_EvoEF2_score"] = None
-        
-        # ---- NEW: Compute norm_trunc_sasa as trunc_sasa divided by trunc_length ----
-        try:
-            trunc_sasa = new_metrics.get("trunc_sasa")
-            # Reuse trunc_length from above
-            if trunc_sasa is not None and trunc_length and trunc_length != 0:
-                new_metrics["norm_trunc_sasa"] = trunc_sasa / trunc_length
-            else:
-                new_metrics["norm_trunc_sasa"] = None
-        except Exception:
-            new_metrics["norm_trunc_sasa"] = None
-
-        # Merge the new metrics with the original row's data
-        row_dict = row.to_dict()
-        row_dict.update(new_metrics)
-        results.append(row_dict)
-
+        results.append(match_info)
     return pd.DataFrame(results)
 
-# ------------------ Main ------------------
 if __name__ == "__main__":
+    from sys import exit
     parser = ArgumentParser(
-        description="Process an input CSV to compute metrics for truncated binder PDB files."
+        description="Process PDB files to compute clashes, SASA values, and interface metrics."
     )
     parser.add_argument(
-        "--input",
-        type=Path,
-        required=True,
-        help="Path to the input CSV file (created by postprocess_masif_hits.py)."
+        "--pdb_paths", 
+        nargs='+', 
+        type=Path, 
+        required=True, 
+        help="List of absolute paths to binder .pdb files."
     )
     parser.add_argument(
-        "-o", "--out_csv_file",
-        type=Path,
-        required=True,
+        "--target_pdb_path", 
+        type=Path, 
+        required=True, 
+        help="Absolute path to the target .pdb file."
+    )
+    parser.add_argument(
+        "-o", "--out_csv_file", 
+        type=Path, 
+        required=True, 
         help="Path to the output CSV file."
     )
     parser.add_argument(
-        "--ligand",
-        type=str,
-        default=None,
+        "--ligand", 
+        type=str, 
+        default=None, 
         help="Ligand definition in the format 'CHAIN_RESNAME', e.g., 'A_LIG'."
     )
     parser.add_argument(
-        "--sulfur",
-        type=str,
-        default=None,
-        help="Atom name of the sulfur. (Optional)"
+        "--sulfur", 
+        type=str, 
+        default=None, 
+        help="Atom name of the sulfur. Needs to be found in `ligand`."
     )
-    
     parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="Print debug information (e.g., deepTMHMM and STRIDE output)."
+        "--debug", 
+        action="store_true", 
+        help="Print debug information (DeepTMHMM and STRIDE output)."
     )
     args = parser.parse_args()
 
-    # Note: In this script we do not use parse_score_file since scores are already in the input CSV.
-
+    # Parse ligand if provided.
     if args.ligand is not None:
         try:
             ligand_chain, ligand_name = args.ligand.split("_", 1)
             ligand = {"chain": ligand_chain, "name": ligand_name}
         except ValueError:
             print("Error: Ligand must be in the format 'CHAIN_RESNAME', e.g., 'A_LIG'.")
-            sys.exit(1)
+            exit(1)
     else:
         ligand = None
 
-    df_trunc = process_truncated_results(
-        input_csv=args.input,
-        ligand_def=ligand,
+    df = process_results(
+        pdb_paths=args.pdb_paths, 
+        target_pdb=args.target_pdb_path,
+        ligand_def=ligand, 
         sulfur_name=args.sulfur,
         debug=args.debug
     )
-    df_trunc.to_csv(args.out_csv_file, index=False)
+    df.to_csv(args.out_csv_file, index=False)
     print(f"Results saved to {args.out_csv_file}")

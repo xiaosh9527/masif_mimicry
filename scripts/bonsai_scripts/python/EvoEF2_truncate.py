@@ -108,8 +108,8 @@ def truncate_pdb_by_residue(input_pdb, out_pdb, start_resi, end_resi):
                 fout.write(line)
 
 def run_EvoEF2(pdb_path):
-    cwd = os.path.expanduser(EvoEF2_dir)
-    EvoEF2_exec = os.path.join(os.path.expanduser(EvoEF2_dir), "EvoEF2")
+    cwd = os.path.abspath(EvoEF2_dir)
+    EvoEF2_exec = os.path.join(os.path.abspath(EvoEF2_dir), "EvoEF2")
     cmd = [EvoEF2_exec, "--command=ComputeStability", f"--pdb={pdb_path}"]
     proc = subprocess.run(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     output = proc.stdout

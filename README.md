@@ -44,7 +44,6 @@ The following is the list of required libraries and programs, as well as the ver
 
 MaSIF-mimicry has been tested on Linux. To run the mimicry pipeline, first clone the official MaSIF-mimicry repository and then clone this repository inside it. 
 
-
 MaSIF is written in Python and does not require compilation. Since MaSIF relies on a few external programs (MSMS, APBS) and libraries (PyMesh, Tensorflow, Scipy, Open3D), we strongly recommend you use the Dockerfile and Docker container. Setting up the environment should take a few minutes only.
 ```
 git clone https://github.com/LPDI-EPFL/masif_seed.git

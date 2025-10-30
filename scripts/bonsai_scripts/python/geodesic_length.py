@@ -2,7 +2,7 @@
 import argparse
 import numpy as np
 import networkx as nx
-from skimage.morphology import skeletonize_3d
+from skimage.morphology import skeletonize
 from scipy.ndimage import median_filter
 from Bio.PDB import PDBParser
 
@@ -116,6 +116,49 @@ def resample_path(world_coords, interval=1.0):
         prev = pt
     return sampled
 
+def compute_geodesic_length(input_path, output_path=None, spacing=1.0, margin=5.0):
+    """
+    Compute geodesic length of a PDB model via skeletonization of its 3D object.
+    
+    Args:
+        input_path (str): Path to input PDB file
+        output_path (str, optional): Path to output file for sampled skeleton vertices
+        spacing (float): Voxel size in Å (default: 1.0)
+        margin (float): Margin around the structure in Å (default: 5.0)
+    
+    Returns:
+        dict: Dictionary containing 'abs_geodesic_length' and 'norm_geodesic_length'
+    """
+    atoms = load_structure(input_path)
+    voxel_grid, origin = create_voxel_grid(atoms, spacing=spacing, margin=margin)
+    
+    # Apply median filter for smoothing the voxel grid.
+    # Since the grid is boolean, convert to float (0.0, 1.0) for filtering.
+    float_grid = voxel_grid.astype(float)
+    size = 3  # Adjust size as needed for smoothing
+    smoothed = median_filter(float_grid, size=size)
+    # Threshold back to binary
+    smoothed_binary = smoothed > 0.5
+    
+    object_volume = np.sum(voxel_grid) * (spacing**3)
+    
+    skeleton = skeletonize(smoothed_binary)
+    longest_voxel_path, geodesic_length = longest_path_skeleton(skeleton)
+    normalized_length = geodesic_length / (object_volume ** (1/3)) if geodesic_length > 0 else 0
+    
+    # Save sampled points if output path is provided
+    if output_path:
+        world_path = [np.array(idx) * spacing + origin for idx in longest_voxel_path]
+        sampled_points = resample_path(world_path, interval=1.0)
+        with open(output_path, 'w') as f:
+            for pt in sampled_points:
+                f.write("{},{},{}\n".format(pt[0], pt[1], pt[2]))
+    
+    return {
+        'abs_geodesic_length': geodesic_length,
+        'norm_geodesic_length': normalized_length
+    }
+
 def main():
     parser = argparse.ArgumentParser(
         description="Compute geodesic length of a PDB model via skeletonization of its 3D object."
@@ -128,23 +171,9 @@ def main():
                         help="Return the normalized geodesic length (absolute length / volume) as a numeric value")
     args = parser.parse_args()
     
-    atoms = load_structure(args.input)
-    spacing = 1.0  # voxel size in Å
-    voxel_grid, origin = create_voxel_grid(atoms, spacing=spacing, margin=5.0)
-    
-    # Apply median filter for smoothing the voxel grid.
-    # Since the grid is boolean, convert to float (0.0, 1.0) for filtering.
-    float_grid = voxel_grid.astype(float)
-    size = 3  # Adjust size as needed for smoothing
-    smoothed = median_filter(float_grid, size=size)
-    # Threshold back to binary
-    smoothed_binary = smoothed > 0.5
-    
-    object_volume = np.sum(voxel_grid) * (spacing**3)
-    
-    skeleton = skeletonize_3d(smoothed_binary)
-    longest_voxel_path, geodesic_length = longest_path_skeleton(skeleton)
-    normalized_length = geodesic_length / (object_volume ** (1/3)) if geodesic_length > 0 else 0
+    result = compute_geodesic_length(args.input, args.output)
+    geodesic_length = result['abs_geodesic_length']
+    normalized_length = result['norm_geodesic_length']
     
     # Output results based on provided flags.
     if args.abs_flag and not args.norm_flag:
@@ -157,13 +186,6 @@ def main():
     else:
         print("Absolute geodesic length:", geodesic_length)
         print("Normalized geodesic length:", normalized_length)
-    
-    if args.output:
-        world_path = [np.array(idx) * spacing + origin for idx in longest_voxel_path]
-        sampled_points = resample_path(world_path, interval=1.0)
-        with open(args.output, 'w') as f:
-            for pt in sampled_points:
-                f.write("{},{},{}\n".format(pt[0], pt[1], pt[2]))
 
 if __name__ == "__main__":
     main()

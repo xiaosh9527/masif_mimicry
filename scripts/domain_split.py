@@ -5,6 +5,11 @@ import numpy as np
 
 from Bio.PDB import *
 
+# Paths assuming masif runs inside the docker container
+PATH_PAE_TO_DOMAINS_SCRIPT = '/workspace/masif/data/masif_human_proteome/pae_to_domains/pae_to_domains.py'
+PATH_DSSP_EXECUTABLE = '/usr/bin/dssp' 
+AF_DB_VERSION = 'v6' # Current version. For the paper we used v4
+
 def create_parser():
     parser = argparse.ArgumentParser(description='Split AlphaFold models into domains based on PAE.')
     parser.add_argument('--uniprot_id', type=str, required=True, help='UniProt ID of the protein to process.')
@@ -21,12 +26,11 @@ def retrive_data_from_url(url, outfile):
         raise Exception(f"Failed to retrieve data from {url}. Status code: {response.status_code}")
 
 def download_af_db_data(uniprot_id, out_pdb_folder='./', out_pae_folder='./'):
-    af_pdb_query = f'https://alphafold.ebi.ac.uk/files/AF-{uniprot_id}-F1-model_v4.pdb'
-    af_pae_query = f'https://alphafold.ebi.ac.uk/files/AF-{uniprot_id}-F1-predicted_aligned_error_v4.json'
+    af_pdb_query = f'https://alphafold.ebi.ac.uk/files/AF-{uniprot_id}-F1-model_{AF_DB_VERSION}.pdb'
+    af_pae_query = f'https://alphafold.ebi.ac.uk/files/AF-{uniprot_id}-F1-predicted_aligned_error_{AF_DB_VERSION}.json'
 
-
-    out_pdb_name = os.path.join(out_pdb_folder, f"AF-{uniprot_id}-F1-model_v4.pdb")
-    out_pae_name = os.path.join(out_pae_folder, f"AF-{uniprot_id}-F1-predicted_aligned_error_v4.json")
+    out_pdb_name = os.path.join(out_pdb_folder, f"AF-{uniprot_id}-F1-model_{AF_DB_VERSION}.pdb")
+    out_pae_name = os.path.join(out_pae_folder, f"AF-{uniprot_id}-F1-predicted_aligned_error_{AF_DB_VERSION}.json")
 
     retrive_data_from_url(af_pdb_query, out_pdb_name)
     retrive_data_from_url(af_pae_query, out_pae_name)
@@ -165,7 +169,7 @@ def extract_residues(input_pdb, residue_list, output_pdb, cap_terminis=False):
 def truncate_low_plddt_loops(input_path, output_path):
     parser = PDBParser(QUIET=True)
     structure = parser.get_structure('', input_path)
-    dssp = DSSP(structure[0], input_path, dssp="/work/lpdi/bin/sequence/dssp")
+    dssp = DSSP(structure[0], input_path, dssp=PATH_DSSP_EXECUTABLE)
     
     dssp_label = [x[2] for x in dssp]
     plddt_list = [atom.get_bfactor() for atom in structure.get_atoms() if atom.get_name() == 'CA']
@@ -207,11 +211,11 @@ def truncate_low_plddt_loops(input_path, output_path):
 def main(uniprot_id: str = 'P0DTC2', pae_cutoff: float = 15.0):
     download_af_db_data(uniprot_id, out_pae_folder=PAE_FOLDER, out_pdb_folder=RAW_PDB_FOLDER)
 
-    pdb_file = os.path.join(RAW_PDB_FOLDER, f'AF-{uniprot_id}-F1-model_v4.pdb')
-    pae_file = os.path.join(PAE_FOLDER, f'AF-{uniprot_id}-F1-predicted_aligned_error_v4.json')
+    pdb_file = os.path.join(RAW_PDB_FOLDER, f'AF-{uniprot_id}-F1-model_{AF_DB_VERSION}.pdb')
+    pae_file = os.path.join(PAE_FOLDER, f'AF-{uniprot_id}-F1-predicted_aligned_error_{AF_DB_VERSION}.json')
     tmp_file = os.path.join(TMP_FOLDER, f'AF-{uniprot_id}-F1-predicted_aligned_clusters.csv')
 
-    subprocess.run(['python', '/work/lpdi/users/shxiao/pae_to_domains/pae_to_domains.py', pae_file, '--pae_cutoff', str(pae_cutoff), '--output_file', tmp_file])
+    subprocess.run(['python', PATH_PAE_TO_DOMAINS_SCRIPT, pae_file, '--pae_cutoff', str(pae_cutoff), '--output_file', tmp_file])
 
     df_clust = pd.read_csv(tmp_file, header=None)
     list_of_clust = df_clust.apply(lambda row: row_to_list(row), axis=1)
@@ -229,7 +233,7 @@ def main(uniprot_id: str = 'P0DTC2', pae_cutoff: float = 15.0):
             out_file_3 = os.path.join(FRAG_FOLDER, f'{uniprot_id}-F1-dom-{str(i+1).zfill(2)}.pdb')
             extract_residues(out_file_2, 'all', out_file_3, cap_terminis=True)
         else:
-            print(f'Step 3 skipped due for disorganized regions!')
+            print(f'Step 3 skipped due to disorganized regions!')
             pass
 
 if __name__ == '__main__':        

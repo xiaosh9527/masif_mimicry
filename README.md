@@ -57,7 +57,14 @@ cd ..
 docker run --rm -it -v $(pwd):/workspace -w /workspace masif_mimicry
 ```
 
-## Step-by-step example
+In case you're using an HPC system with Apptainer/Singularity, you can create an
+apptainer image as follows:
+
+```bash
+apptainer pull masif_mimicry.sif docker://annadiarov/masif_mimicry:v1.0
+```
+
+## Step-by-step example with Docker
 
 To reproduce the experiments in the paper, the entire datasets for the human proteome consume several terabytes. We will test MaSIF-mimicry using one example between mTOR and Ikaros.
 Here, we provide an example to process mTOR structures into individual structural domains by using pae_to_domain to split the AlphaFold models based on a PAE cutoff of 15 Å.

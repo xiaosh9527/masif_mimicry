@@ -40,12 +40,12 @@ The following is the list of required libraries and programs, as well as the ver
 * [python-igraph](https://igraph.org/python/) (0.9.6). Used in pae_to_domain package to split AlphaFold (AF) models into individual domains. Only needed if you want to process AF models.
 * [pae_to_domain](https://github.com/tristanic/pae_to_domains). Code used to split AF models into individual domains based on Predicted Aligned Error (PAE) values. Only needed if you want to process AF models.
 
-## Installation with Docker
+## Installation
 
 MaSIF-mimicry has been tested on Linux. To run the mimicry pipeline, first clone the official MaSIF-mimicry repository and then clone this repository inside it. 
 
 MaSIF is written in Python and does not require compilation. Since MaSIF relies on a few external programs (MSMS, APBS) and libraries (PyMesh, Tensorflow, Scipy, Open3D), we strongly recommend you use the Dockerfile and Docker container. Setting up the environment should take a few minutes only.
-```
+```bash
 git clone https://github.com/LPDI-EPFL/masif_seed.git
 cd masif_seed
 git clone https://github.com/xiaosh9527/masif_mimicry.git
@@ -69,7 +69,7 @@ apptainer pull masif_mimicry.sif docker://annadiarov/masif_mimicry:v1.0
 To reproduce the experiments in the paper, the entire datasets for the human proteome consume several terabytes. We will test MaSIF-mimicry using one example between mTOR and Ikaros.
 Here, we provide an example to process mTOR structures into individual structural domains by using pae_to_domain to split the AlphaFold models based on a PAE cutoff of 15 Å.
 
-```
+```bash
 # Assuming you are in the masif_seed directory and running inside the docker container...
 cd masif/data/
 mkdir masif_human_proteome
@@ -91,7 +91,7 @@ Below, we use one of the mTOR domains as an example. To process a fragment we wi
 5. Compute MaSIF descriptors
 6. Copy files required for mimicry search to output directory
 
-```
+```bash
 # Assuming you are running inside the docker container...
 bash /workspace/masif_mimicry/preprocess_pdb.sh input/fragments/P42345-F1-dom-01.pdb P42345-F1-dom-01_A -o output/
 ```
@@ -100,14 +100,14 @@ bash /workspace/masif_mimicry/preprocess_pdb.sh input/fragments/P42345-F1-dom-01
 Once the site predictions and descriptors on `P42345-F1-dom-01_A` have been computed, we can focus on the target. 
 The features, MaSIF-site and MaSIF-search descriptors must be computed as well for the target, as well as a surface with per-vertex coloring.
 
-```
+```bash
 cd ../../../masif_mimicry/data/template/
 bash /workspace/masif_mimicry/preprocess_pdb.sh input/6h0g.pdb 6h0g_C_B -o output/
 ```
 
 Finally, run the script to search for a surface patch in mTOR that mimics the ZNF692 degron interface. 
 
-```
+```bash
 ./run.sh
 ```
 

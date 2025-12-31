@@ -137,7 +137,7 @@ def main(args):
             raise ValueError('Invalid format. Please use PDB_X or PDB_X_X')
 
         for ppi_id in ppi_id_list:
-            try:
+            # try:
                 P1_all_feats = get_features(params, P1, ppi_id, source=True, flip_desc=False)
                 P1_selected_points_idx, P1_patch_descs, P1_patch_iface = select_patches(
                     P1_all_feats,
@@ -214,10 +214,11 @@ def main(args):
                             P1_nearest_res = P1_nearest_atom[0].get_parent().get_id()[1]
 
                             # Compute TMscore using USalign
-                            process = Popen(["/work/lpdi/users/shxiao/USalign", P1_all_feats['pdb'], P2_all_feats['pdb'], '-mm', '0', '-ter', '2'], stdout=PIPE, stderr=PIPE)
+                            process = Popen(["/workspace/masif_mimicry/USalign/USalign", P1_all_feats['pdb'], P2_all_feats['pdb'], '-mm', '0', '-ter', '2'], stdout=PIPE, stderr=PIPE)
                             stdout, _ = process.communicate()
-                            TMscore_P1 = float(stdout.decode().splitlines()[14].split(' ')[1])
-                            TMscore_P2 = float(stdout.decode().splitlines()[15].split(' ')[1])
+                            TMscore_list = [float(x.split(' ')[1]) for x in stdout.decode().splitlines() if 'TM-score=' in x]
+                            TMscore_P1 = TMscore_list[0] if TMscore_list else 0.0
+                            TMscore_P2 = TMscore_list[1] if len(TMscore_list) > 1 else 0.0
 
                             scores[(P1, P2)]['P1_id'].append(P1)
                             scores[(P1, P2)]['P2_id'].append(P2)
@@ -241,8 +242,8 @@ def main(args):
                         else:
                             pass
 
-            except Exception as e:
-                print(f'Error: {e}')
+            # except Exception as e:
+            #     print(f'Error: {e}')
 
 if __name__ == '__main__':
     parser = create_parser()

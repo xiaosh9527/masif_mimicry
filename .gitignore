@@ -1,3 +1,9 @@
 data/test/*
 EvoEF2/
 stride/
+logs/
+data/template/data_preparation/*
+data/template/descriptors/*
+data/template/output/*
+data/template/logs/*
+data/template/targets/*

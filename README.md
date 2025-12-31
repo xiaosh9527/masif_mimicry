@@ -50,6 +50,10 @@ git clone https://github.com/LPDI-EPFL/masif_seed.git
 cd masif_seed
 git clone https://github.com/xiaosh9527/masif_mimicry.git
 cd masif_mimicry
+```
+
+If using docker:
+```
 # Build the docker container (this may take some minutes)
 docker build . -t masif_mimicry 
 cd ..
@@ -72,9 +76,11 @@ Here, we provide an example to process mTOR structures into individual structura
 ```bash
 # Assuming you are in the masif_seed directory and running inside the docker container...
 cd masif/data/
-mkdir masif_human_proteome
+mkdir -p masif_human_proteome
 cd masif_human_proteome
-git clone https://github.com/tristanic/pae_to_domains.git
+if [ ! -d "pae_to_domains" ] ; then
+    git clone https://github.com/tristanic/pae_to_domains.git
+fi
 sh ../../../masif_mimicry/scripts/process_af_model.sh P42345
 ```
 

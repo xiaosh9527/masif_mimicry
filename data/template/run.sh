@@ -9,9 +9,6 @@ masif_db_source=$masif_db_root/source
 masif_seed_source=$masif_seed_root/source
 masif_mimicry_source=$masif_mimicry_root/source
 
-export masif_db_source
-export masif_seed_source
-export masif_mimicry_source
 export PYTHONPATH=$PYTHONPATH:$masif_db_source:$masif_seed_source:$masif_mimicry_source:`pwd`
 
 python -u $masif_mimicry_source/masif_mimicry_search.py \

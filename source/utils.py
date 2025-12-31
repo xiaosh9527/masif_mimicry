@@ -1,12 +1,19 @@
 import os
 import numpy as np
 import open3d as o3d
+
 from scipy.spatial import cKDTree
 from Bio.PDB import PDBParser, PDBIO, Selection, DSSP
-
+from packaging import version
 from geometry.open3d_import import *
-
 from default_config.masif_opts import masif_opts
+
+if version.parse('0.12.0') <= version.parse(o3d.__version__):
+    ICPConvergenceCriteria = o3d.pipelines.registration.ICPConvergenceCriteria
+elif version.parse('0.6.0') < version.parse(o3d.__version__):
+    ICPConvergenceCriteria = o3d.registration.ICPConvergenceCriteria
+else:
+    ICPConvergenceCriteria = o3d.ICPConvergenceCriteria
 
 def set_params(target_root: str, masif_db_root: str = "/work/lpdi/users/shxiao/scratch/masif_seed/masif", db_name: str = "masif_oas", masif_app: str = "ppi_search") -> dict:
     '''
@@ -75,8 +82,8 @@ def get_features(params: dict, pdb: str, pid: str, source: bool = True, flip_des
     
     all_feats = dict(
         pdb = pdb_fn,
-        mesh = o3d.io.read_triangle_mesh(ply),
-        pcd = o3d.io.read_point_cloud(ply),
+        mesh = read_triangle_mesh(ply),
+        pcd = read_point_cloud(ply),
         rho = np.load(rho_fn),
         theta = np.load(theta_fn),
         desc = np.load(desc_fn),
@@ -265,10 +272,10 @@ def get_patch_geo(
     if flip_normals:
         patch_nrmls = -patch_nrmls
 
-    patch = o3d.geometry.PointCloud()
-    patch.points = o3d.utility.Vector3dVector(patch_pts)
-    patch.normals = o3d.utility.Vector3dVector(patch_nrmls)
-    patch_descs = [o3d.pipelines.registration.Feature(), o3d.pipelines.registration.Feature(), o3d.pipelines.registration.Feature()]
+    patch = PointCloud()
+    patch.points = Vector3dVector(patch_pts)
+    patch.normals = Vector3dVector(patch_nrmls)
+    patch_descs = [Feature(), Feature(), Feature()]
     patch_descs[0].data = descriptors[patch_idxs, :].T
     
     return patch, patch_descs, patch_idxs
@@ -279,7 +286,7 @@ def multidock(
     binder_align: bool = False, ransac_skip: bool = False
 ):
     ransac_radius=1.5
-    ransac_iter=1000000000
+    ransac_iter=2000
     all_results = []
     all_source_patch = []
     all_source_scores = []
@@ -294,34 +301,34 @@ def multidock(
             source_pcd, source_patch_idxs, pt, source_descs, outward_shift=0.25)
         
         if not ransac_skip: 
-            result = o3d.pipelines.registration.registration_ransac_based_on_feature_matching(
-                source=source_patch, target=target_patch, source_feature=source_patch_descs[0], target_feature=target_patch_descs[0], 
-                mutual_filter=False, max_correspondence_distance=ransac_radius, 
-                estimation_method=o3d.pipelines.registration.TransformationEstimationPointToPoint(False), 
-                ransac_n = 3, checkers=[o3d.pipelines.registration.CorrespondenceCheckerBasedOnEdgeLength(0.9),
-                o3d.pipelines.registration.CorrespondenceCheckerBasedOnDistance(1.0),
-                o3d.pipelines.registration.CorrespondenceCheckerBasedOnNormal(np.pi/2)],
-                criteria=o3d.pipelines.registration.RANSACConvergenceCriteria(max_iteration=ransac_iter, confidence=0.999999),
-                seed=42
-            )
             # result = registration_ransac_based_on_feature_matching(
             #     source=source_patch, target=target_patch, source_feature=source_patch_descs[0], target_feature=target_patch_descs[0], 
-            #     max_correspondence_distance=ransac_radius,
-            #     estimation_method=TransformationEstimationPointToPoint(False), ransac_n=3,
-            #     checkers=[CorrespondenceCheckerBasedOnEdgeLength(0.9),
+            #     mutual_filter=False, max_correspondence_distance=ransac_radius, 
+            #     estimation_method=TransformationEstimationPointToPoint(False), 
+            #     ransac_n = 3, checkers=[CorrespondenceCheckerBasedOnEdgeLength(0.9),
             #     CorrespondenceCheckerBasedOnDistance(1.0),
             #     CorrespondenceCheckerBasedOnNormal(np.pi/2)],
-            #     criteria=RANSACConvergenceCriteria(ransac_iter, 500)
+            #     criteria=RANSACConvergenceCriteria(max_iteration=ransac_iter, confidence=0.999999),
+            #     seed=42
             # )
+            result = registration_ransac_based_on_feature_matching(
+                source=source_patch, target=target_patch, source_feature=source_patch_descs[0], target_feature=target_patch_descs[0], 
+                max_correspondence_distance=ransac_radius,
+                estimation_method=TransformationEstimationPointToPoint(False), ransac_n=3,
+                checkers=[CorrespondenceCheckerBasedOnEdgeLength(0.9),
+                CorrespondenceCheckerBasedOnDistance(1.0),
+                CorrespondenceCheckerBasedOnNormal(np.pi/2)],
+                criteria=RANSACConvergenceCriteria(ransac_iter, 500)
+            )
             init = result.transformation
         else:
             init = np.identity(4)
 
-        result_icp = o3d.pipelines.registration.registration_icp(
+        result_icp = registration_icp(
             source=source_patch, target=target_patch,
             max_correspondence_distance=1.5, init=init,
-            estimation_method=o3d.pipelines.registration.TransformationEstimationPointToPlane(),
-            criteria=o3d.pipelines.registration.ICPConvergenceCriteria()
+            estimation_method=TransformationEstimationPointToPlane(),
+            criteria=ICPConvergenceCriteria()
         )
         # result_icp = registration_icp(
         #     source=source_patch, target=target_patch,
@@ -451,8 +458,8 @@ def transform_structure(input_path, T, output_path=None):
     structure = pdb_parser.get_structure('', input_path)
     P_atoms = [atom for atom in structure.get_atoms() if not atom.get_name().startswith('H')]
     P_coords = np.array([atom.get_coord() for atom in P_atoms])
-    P_coords_pcd = o3d.geometry.PointCloud()
-    P_coords_pcd.points = o3d.utility.Vector3dVector(P_coords)
+    P_coords_pcd = PointCloud()
+    P_coords_pcd.points = Vector3dVector(P_coords)
     P_coords_pcd.transform(T)
     for ix, v in enumerate(P_coords_pcd.points):
         P_atoms[ix].set_coord(v)

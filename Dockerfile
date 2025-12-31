@@ -49,6 +49,12 @@ WORKDIR /install/reduce/reduce_src
 RUN make
 RUN make install
 
+# DOWNLOAD USalign
+WORKDIR /install
+RUN git clone https://github.com/pylelab/USalign.git
+WORKDIR /install/USalign
+RUN make
+
 # Install python libraries
 RUN pip3 install matplotlib 
 RUN pip3 install ipython Biopython scikit-learn tensorflow==1.12 networkx open3d==0.8.0.0 dask==1.2.2 packaging

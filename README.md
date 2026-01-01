@@ -19,41 +19,32 @@ This repository contains code to perform the experiments in _Mapping the latent 
 
 ### Hardware requirements
 
-MaSIF-seed has been tested on Linux, and it is recommended to run on an x86-based linux Docker container. 
+MaSIF-seed has been tested on Linux, and it is recommended to run on an x86-based Linux Docker container. 
 
-Currently, MaSIF takes a few seconds to preprocess every protein. We find the main bottleneck to be the APBS computation for surface charges, which can likely be optimized. Nevertheless, we recommend a distributed CPU cluster to preprocess the data for large datasets of proteins.
+Currently, MaSIF takes a few seconds to preprocess every protein. We find the main bottleneck is the APBS computation of surface charges, which can likely be optimized. Nevertheless, we recommend a distributed CPU cluster for preprocessing large protein datasets.
 
 ### Software requirements
 
 MaSIF relies on external software/libraries to handle protein databank files and surface files, 
 to compute chemical/geometric features and coordinates, and to perform neural network calculations. 
-The following is the list of required libraries and programs, as well as the version on which it was tested (in parentheses).
-* [Python](https://www.python.org/) (3.6)
-* [reduce](http://kinemage.biochem.duke.edu/software/reduce.php) (3.23). To add protons to proteins. 
-* [MSMS](http://mgltools.scripps.edu/packages/MSMS/) (2.6.1). To compute the surface of proteins. 
-* [BioPython](https://github.com/biopython/biopython) (1.66). To parse PDB files. 
-* [PyMesh](https://github.com/PyMesh/PyMesh) (0.1.14). To handle ply surface files, attributes, and to regularize meshes.
-* PDB2PQR (2.1.1), multivalue, and [APBS](http://www.poissonboltzmann.org/) (1.5). These programs are necessary to compute electrostatics charges.
-* [Open3D](https://github.com/IntelVCL/Open3D) (0.5.0.0). Mainly used for RANSAC alignment.
-* [Tensorflow](https://www.tensorflow.org/) (1.9). Use to model, train, and evaluate the actual neural networks. Models were trained and evaluated on a NVIDIA Tesla K40 GPU.
-* [Pymol](https://pymol.org/2/) (2.5.0). This optional program allows one to visualize surface files.
-* [python-igraph](https://igraph.org/python/) (0.9.6). Used in pae_to_domain package to split AlphaFold (AF) models into individual domains. Only needed if you want to process AF models.
-* [pae_to_domain](https://github.com/tristanic/pae_to_domains). Code used to split AF models into individual domains based on Predicted Aligned Error (PAE) values. Only needed if you want to process AF models.
+These dependencies have been installed in an Apptainer image. 
+The pipeline also requires additional packages for performing the postprocessing _bonsai_ workflow. 
+An environment.yml file is provided to create a conda environment that is independent from the MaSIF env.
+Below, we give an example of how to install these separately in an Apptainer image. 
 
 ## Installation
 
 MaSIF-mimicry has been tested on Linux. To run the mimicry pipeline, first clone the official MaSIF-mimicry repository and then clone this repository inside it. 
 
-MaSIF is written in Python and does not require compilation. Since MaSIF relies on a few external programs (MSMS, APBS) and libraries (PyMesh, Tensorflow, Scipy, Open3D), we strongly recommend you use the Dockerfile and Docker container. Setting up the environment should take a few minutes only.
-```bash
+MaSIF is written in Python and does not require compilation. Since MaSIF relies on a few external programs (MSMS, APBS) and libraries (PyMesh, TensorFlow, SciPy, Open3D), we strongly recommend that you use the Dockerfile and Docker container. Setting up the environment should take only a few minutes.
+```
 git clone https://github.com/LPDI-EPFL/masif_seed.git
 cd masif_seed
 git clone https://github.com/xiaosh9527/masif_mimicry.git
 cd masif_mimicry
 ```
 
-We use Apptainer/Singularity on an HPC system. 
-Apptainer image is created as follows:
+We use Apptainer/Singularity on an HPC system. Apptainer image is created as follows:
 
 ```
 apptainer pull masif_mimicry.sif docker://shxiao/masif_mimicry:latest
@@ -61,7 +52,7 @@ apptainer pull masif_mimicry.sif docker://shxiao/masif_mimicry:latest
 
 ## Step-by-step example
 We provide an example of searching for surface patches in P42345 (mTOR) that mimic the 6h0g_C (ZNF692) degron interface.
-Explaination for each step is detailed in the slurm file. 
+We first divide proteins in DB (i.e., P42345) into structured domains, and use MaSIF to process these domains as well as the target protein, chain C of 6h0g ZNF692. Explanation for each step is detailed in the Slurm file. 
 ```
 sbatch preprocess_pdb_apptainer.slurm
 ```
@@ -73,21 +64,21 @@ cd ./data/template
 sbatch run.slurm
 ```
 
-Before proceed to the postprocessing step (_bonsai_), we create a conda env for the required dependencies (EvoEF2, Stride, DeepTMHMM) in the Apptainer image. 
-This is to ensure all dependencies are properly installed and configured as a separate environment from the MaSIF environment.
-```bash
+Before proceeding to the postprocessing step (_bonsai_), we create a conda env for the required dependencies (EvoEF2, Stride, DeepTMHMM) in the Apptainer image. 
+This is to ensure all dependencies are correctly installed and configured as a separate environment from the MaSIF environment.
+```
 cd ../../scripts/bonsai_scripts/
 bash ./slurm/conda.sh
 ```
 
-Ideally one should collect all hits from the DB and create a directory that contains PDBs of the best poses. Here we use the raw output of poses from P42345 (mTOR) vs 6h0g_C (ZNF692) search. 
+Ideally, one should collect all hits from the DB and create a directory that contains PDBs of the best poses. Here, we use the raw pose output from the P42345 (mTOR) vs 6h0g_C (ZNF692) search. 
 Finally, we run the postprocessing script to truncate the hits and compute metrics. 
 
-```bash
+```
 bash postprocessing_truncation_workflow_apptainer.sh
 ```
 
-By default, the output metrics are stored in `Truncate_86/proc_truncated_scores.csv` file inside of the defined output directory, and all the truncated PDBs are stored in the `Truncate_86/truncate` directory.
+By default, the output metrics are stored in the `Truncate_86/proc_truncated_scores.csv` file inside the defined output directory, and all the truncated PDBs are stored in the `Truncate_86/truncate` directory.
 
 ## Configuring parameters
 
@@ -134,5 +125,3 @@ MaSIF-mimicry is released under an [Apache v2.0 license](LICENSE).
 
 ## Reference
 If you use this code, please use the bibtex entry in [citation.bib](citation.bib)
-
-

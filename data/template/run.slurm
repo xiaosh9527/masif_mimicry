@@ -12,14 +12,12 @@ IMAGE=$masif_root/masif_mimicry/masif_mimicry.sif
 apptainer exec \
   --bind "$masif_root:/workspace" \
   --pwd /workspace \
-  "$IMAGE" /bin/bash -c '
-    cd $masif_mimicry_root/data/template/
-    export LC_ALL=C.UTF-8
-    export LANG=C.UTF-8
-
+  "$IMAGE" /bin/bash -c '    
     masif_db_root=/workspace/masif
     masif_seed_root=/workspace/masif_seed_search
     masif_mimicry_root=/workspace/masif_mimicry
+
+    cd $masif_mimicry_root/data/template/
 
     masif_db_source=$masif_db_root/source
     masif_seed_source=$masif_seed_root/source
@@ -38,9 +36,11 @@ apptainer exec \
       --target_atom CA \
       --top_iface_percent 0.0 \
       --count_clashes \
-      --downsample 5 \
+      --ca_clash_threshold 1.0 \
+      --heavy_atom_clash_threshold 5.0 \
+      --downsample 3 \
       --desc_dist_cutoff 2.0 \
-      --desc_dist_score_cutoff 0.4 \
+      --desc_dist_score_cutoff 0.45 \
       --output_dir "$PWD/results/" \
       --output_postfix test \
       --seed_pdb P42345-F1-dom-01_A

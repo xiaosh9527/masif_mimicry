@@ -52,70 +52,42 @@ git clone https://github.com/xiaosh9527/masif_mimicry.git
 cd masif_mimicry
 ```
 
-If using docker:
+We use Apptainer/Singularity on an HPC system. 
+Apptainer image is created as follows:
+
 ```
-# Build the docker container (this may take some minutes)
-docker build . -t masif_mimicry 
-cd ..
-# Initialize the docker container terminal
-docker run --rm -it -v $(pwd):/workspace -w /workspace masif_mimicry
+apptainer pull masif_mimicry.sif docker://shxiao/masif_mimicry:latest
 ```
 
-In case you're using an HPC system with Apptainer/Singularity, you can create an
-apptainer image as follows:
+## Step-by-step example
+We provide an example of searching for surface patches in P42345 (mTOR) that mimic the 6h0g_C (ZNF692) degron interface.
+Explaination for each step is detailed in the slurm file. 
+```
+sbatch preprocess_pdb_apptainer.slurm
+```
+
+Once both the DB and target protein are processed, run the script to search for a surface patch in mTOR that mimics the ZNF692 degron interface. 
+
+```
+cd ./data/template
+sbatch run.slurm
+```
+
+Before proceed to the postprocessing step (_bonsai_), we create a conda env for the required dependencies (EvoEF2, Stride, DeepTMHMM) in the Apptainer image. 
+This is to ensure all dependencies are properly installed and configured as a separate environment from the MaSIF environment.
+```bash
+cd ../../scripts/bonsai_scripts/
+bash ./slurm/conda.sh
+```
+
+Ideally one should collect all hits from the DB and create a directory that contains PDBs of the best poses. Here we use the raw output of poses from P42345 (mTOR) vs 6h0g_C (ZNF692) search. 
+Finally, we run the postprocessing script to truncate the hits and compute metrics. 
 
 ```bash
-apptainer pull masif_mimicry.sif docker://annadiarov/masif_mimicry:v1.0
+bash postprocessing_truncation_workflow_apptainer.sh
 ```
 
-## Step-by-step example with Docker
-
-To reproduce the experiments in the paper, the entire datasets for the human proteome consume several terabytes. We will test MaSIF-mimicry using one example between mTOR and Ikaros.
-Here, we provide an example to process mTOR structures into individual structural domains by using pae_to_domain to split the AlphaFold models based on a PAE cutoff of 15 Å.
-
-```bash
-# Assuming you are in the masif_seed directory and running inside the docker container...
-cd masif/data/
-mkdir -p masif_human_proteome
-cd masif_human_proteome
-if [ ! -d "pae_to_domains" ] ; then
-    git clone https://github.com/tristanic/pae_to_domains.git
-fi
-sh ../../../masif_mimicry/scripts/process_af_model.sh P42345
-```
-
-This will generate truncated structural domains from the original full-length AF model. The same process can be applied to rest of the proteome proteins to generate a MaSIF human proteome database. 
-> Note: For the article we used AF database v4, which can be downladed in this [link](https://ftp.ebi.ac.uk/pub/databases/alphafold/v4/UP000005640_9606_HUMAN_v4.tar) (4.8 GB).
->
-> Warning: The current script [`domain_split.py`](scripts/domain_split.py), called by [`process_af_model.sh`](scripts/process_af_model.sh), uses the version v6 because v4 is no longer supported for download using the Uniprot ID.
-
-Below, we use one of the mTOR domains as an example. To process a fragment we will use the [`preprocess_pdb.sh`](preprocess_pdb.sh) script, which runs the following tasks:
-1. Preprocess the PDB file (add hydrogens, compute surface with MSMS, compute geometric and chemical features...)
-2. Precompute the MaSIF-site features
-3. Precompute the MaSIF-search features
-4. Predict interface sites with MaSIF-site
-5. Compute MaSIF descriptors
-6. Copy files required for mimicry search to output directory
-
-```bash
-# Assuming you are running inside the docker container...
-bash /workspace/masif_mimicry/preprocess_pdb.sh input/fragments/P42345-F1-dom-01.pdb P42345-F1-dom-01_A -o output/
-```
-> Note: In cases where multiple domains are generated, the same procedure must be applied to all.
-
-Once the site predictions and descriptors on `P42345-F1-dom-01_A` have been computed, we can focus on the target. 
-The features, MaSIF-site and MaSIF-search descriptors must be computed as well for the target, as well as a surface with per-vertex coloring.
-
-```bash
-cd ../../../masif_mimicry/data/template/
-bash /workspace/masif_mimicry/preprocess_pdb.sh input/6h0g.pdb 6h0g_C_B -o output/
-```
-
-Finally, run the script to search for a surface patch in mTOR that mimics the ZNF692 degron interface. 
-
-```bash
-./run.sh
-```
+By default, the output metrics are stored in `Truncate_86/proc_truncated_scores.csv` file inside of the defined output directory, and all the truncated PDBs are stored in the `Truncate_86/truncate` directory.
 
 ## Configuring parameters
 

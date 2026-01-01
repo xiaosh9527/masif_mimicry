@@ -381,7 +381,7 @@ def compute_score_and_clashes(
     neigh = np.where(d_nn <= 5.0)[0]
 
     if len(neigh) == 0:
-        return [[np.inf, np.inf], 0.0]
+        return [[np.inf, np.inf], 0.0], None
 
     P1_patch_desc = P1_descs[P1_indices[P1_site]]
     P2_patch_desc = P2_descs[P2_indices[P2_site]]
@@ -407,7 +407,11 @@ def compute_score_and_clashes(
             target_structure[0].detach_child(chain.id)
 
         output[0][0], output[0][1] = count_clashes(source_structure, target_structure, radius=2.0)
-    return output
+        if output[0][0] > kwargs.get('ca_clash_threshold', 1.0) or output[0][1] > kwargs.get('heavy_atom_clash_threshold', 5.0):
+            output[1] = 0.0
+        return output, target_structure
+    else:
+        return output, None
 
 def count_clashes(
     source_structure,

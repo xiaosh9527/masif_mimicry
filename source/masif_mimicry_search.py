@@ -101,7 +101,7 @@ def main(args):
 
     scores = {}
     os.makedirs(os.path.join(args.output_dir, f'{P2}_{args.output_postfix}'), exist_ok=True)
-    shutil.copy(P2_all_feats['pdb'], os.path.join(args.output_dir, f'{P2}_{args.output_postfix}', f'{P2}.pdb'))
+    shutil.copy(P2_all_feats['pdb'], os.path.join(args.output_dir, f'{P2}_{args.output_postfix}', f'{P2.split("_")[0]}_{args.target_chain}.pdb'))
 
     for P1 in lines:
         scores[(P1, P2)] = {
@@ -174,8 +174,8 @@ def main(args):
                         target_pcd=P2_all_feats['pcd'], target_patch_idxs=P2_all_feats['indices'], target_descs=P2_all_feats['desc'], binder_align=False
                     )
 
+                    output_root = os.path.join(args.output_dir, f'{P2}_{args.output_postfix}/{P1}')
                     for j, (result, P1_center) in enumerate(zip(all_results, P1_selected_points_idx_final)):
-                        output_root = os.path.join(args.output_dir, f'{P2}_{args.output_postfix}/{P1}')
                         out_filename_base = f'{P1}_{ppi_id}_{P1_center}_to_{P2}_{args.target_ppi_id}_{P2_center}'
 
                         P1_pcd = copy.deepcopy(P1_all_feats['pcd'])
@@ -185,25 +185,30 @@ def main(args):
                         if args.count_clashes:
                             P2_raw_pdb = os.path.join(params['masif_target_root'], 'data_preparation', '00-raw_pdbs', f'{P2.split("_")[0]}.pdb')
                             P2_p2_chain = P2.split('_')[-1]
-                            output = compute_score_and_clashes(
+                            output, target_structure = compute_score_and_clashes(
                                 P1_pdb = os.path.join(local_tmp_dir, f'{out_filename_base}.pdb'), P1_pcd = P1_pcd, P1_descs = P1_all_feats['desc'], P1_site = P1_center, P1_indices = P1_all_feats['indices'],
                                 P2_pdb = P2_all_feats['pdb'], P2_pcd = P2_all_feats['pcd'], P2_descs = P2_all_feats['desc'], P2_site = P2_center, P2_indices = P2_all_feats['indices'],
                                 compute_clashes = True, target_structure = P2_raw_pdb, target_chain = P2_p2_chain, ca_clash_threshold = args.ca_clash_threshold, heavy_atom_clash_threshold = args.heavy_atom_clash_threshold
                             )
                         else:
-                            output = compute_score_and_clashes(
+                            output, target_structure = compute_score_and_clashes(
                                 P1_pdb = os.path.join(local_tmp_dir, f'{out_filename_base}.pdb'), P1_pcd = P1_pcd, P1_descs = P1_all_feats['desc'], P1_site = P1_center, P1_indices = P1_all_feats['indices'],
                                 P2_pdb = P2_all_feats['pdb'], P2_pcd = P2_all_feats['pcd'], P2_descs = P2_all_feats['desc'], P2_site = P2_center, P2_indices = P2_all_feats['indices'],
                                 compute_clashes = False
                             )
-
+                                                    
                         score_ok = output[1] >= args.desc_dist_score_cutoff
 
                         if score_ok:
                             os.makedirs(output_root, exist_ok=True)
+                            if target_structure is not None:
+                                io = PDBIO()
+                                io.set_structure(target_structure)
+                                io.save(os.path.join(args.output_dir, f'{P2}_{args.output_postfix}', f'{(P2.split("_")[0])}_{P2_p2_chain}.pdb'))
+
                             shutil.move(os.path.join(local_tmp_dir, f'{out_filename_base}.pdb'), os.path.join(output_root, f'{out_filename_base}.pdb'))
-                            P1_raw_pdb = os.path.join(params['top_seed_dir'], 'data_preparation', '00-raw_pdbs', f'{P1.split("_")[0]}.pdb')
-                            _ = transform_structure(P1_raw_pdb, result.transformation, os.path.join(output_root, f'{P1.split("_")[0]}.pdb'))
+                            # P1_raw_pdb = os.path.join(params['top_seed_dir'], 'data_preparation', '00-raw_pdbs', f'{P1.split("_")[0]}.pdb')
+                            # _ = transform_structure(P1_raw_pdb, result.transformation, os.path.join(output_root, f'{P1.split("_")[0]}.pdb'))
                             
                             # NOTE: Find the nearest residue on P1 to the center point
                             P1_nearest_atom, _ = surf2atom(
@@ -214,7 +219,7 @@ def main(args):
                             P1_nearest_res = P1_nearest_atom[0].get_parent().get_id()[1]
 
                             # Compute TMscore using USalign
-                            process = Popen(["/workspace/masif_mimicry/USalign/USalign", P1_all_feats['pdb'], P2_all_feats['pdb'], '-mm', '0', '-ter', '2'], stdout=PIPE, stderr=PIPE)
+                            process = Popen(["/install/USalign/USalign", P1_all_feats['pdb'], P2_all_feats['pdb'], '-mm', '0', '-ter', '2'], stdout=PIPE, stderr=PIPE)
                             stdout, _ = process.communicate()
                             TMscore_list = [float(x.split(' ')[1]) for x in stdout.decode().splitlines() if 'TM-score=' in x]
                             TMscore_P1 = TMscore_list[0] if TMscore_list else 0.0
@@ -241,7 +246,6 @@ def main(args):
                             pd.DataFrame(scores[(P1, P2)]).to_csv(f'{output_root}/{P1}_{ppi_id}_to_{P2}_{args.target_ppi_id}.csv')
                         else:
                             pass
-
             # except Exception as e:
             #     print(f'Error: {e}')
 

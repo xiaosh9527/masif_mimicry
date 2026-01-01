@@ -7,3 +7,5 @@ data/template/descriptors/*
 data/template/output/*
 data/template/logs/*
 data/template/targets/*
+data/template/results/*
+data/template/tmp/*

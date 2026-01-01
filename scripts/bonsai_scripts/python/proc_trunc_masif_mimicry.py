@@ -301,10 +301,10 @@ def compute_binder_interface_metrics(binder_struct, target_struct, binder_pdb_pa
             uniprot_id = binder_pdb_file.name.split("-")[0]
             deeptmhmm_path = deeptmhmm_dir / uniprot_id / "predicted_topologies.3line"
             if not deeptmhmm_path.exists():
-                if debug:
-                    print(f"No .3line file found for binder {binder_pdb_file.name}")
-                binder_iface_intracellular = 1
+                # binder_iface_intracellular = 1
+                raise FileNotFoundError(f"DeepTMHMM file not found for {uniprot_id}")
             else:
+                print(f"Found DeepTMHMM file for {uniprot_id} at {deeptmhmm_path}")
                 with open(deeptmhmm_path, "r") as f:
                     lines = f.readlines()
                 if len(lines) < 3:
@@ -319,11 +319,12 @@ def compute_binder_interface_metrics(binder_struct, target_struct, binder_pdb_pa
                     for res in chain:
                         if res.id[0] != " ":
                             continue
-                        try:
-                            aa = protein_letters_3to1(res.get_resname())
-                        except Exception:
+
+                        if res.get_resname() not in protein_letters_3to1:
+                            aa = protein_letters_3to1[res.get_resname()]
+                        else:
                             aa = "-"
-                            continue
+                        
                         binder_seq += aa
                         residue_mapping[(chain.id, res.id)] = seq_index
                         seq_index += 1
@@ -386,9 +387,10 @@ def compute_binder_interface_metrics(binder_struct, target_struct, binder_pdb_pa
             metrics['binder_iface_intracellular'] = binder_iface_intracellular
         except Exception as e:
             binder_name = binder_pdb_file.name if 'binder_pdb_file' in locals() else ""
-            if debug:
-                print(f"Error computing binder_iface_intracellular (primary) for {binder_name}: {e}")
-            metrics['binder_iface_intracellular'] = 1
+            print(f"Warning: Error computing binder_iface_intracellular (secondary) for {binder_name}: {e}")
+            # if debug:
+            #     print(f"Error computing binder_iface_intracellular (primary) for {binder_name}: {e}")
+            # metrics['binder_iface_intracellular'] = 1
 
         # Compute binder residue range metrics.
         binder_res_nums = []

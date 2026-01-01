@@ -9,6 +9,9 @@ import csv
 import re
 import yaml
 
+import pandas as pd
+from tqdm import tqdm
+
 """
 python3 EvoEF2_truncate.py \
     --clean \
@@ -35,8 +38,9 @@ STANDARD_AA = {"ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY",
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Truncate a PDB based on EvoEF2 criteria.")
-    parser.add_argument("--input", required=True, help="Path to input PDB file")
-    parser.add_argument("--iface", required=True, help="Interface residue numbers delimited by underscore (e.g., '101_102_103_104')")
+    parser.add_argument("--input", help="Path to input PDB file")
+    parser.add_argument("--input_csv", help="Path to input CSV file")
+    parser.add_argument("--iface", help="Interface residue numbers delimited by underscore (e.g., '101_102_103_104')")
     parser.add_argument("--length", type=int, required=True, help="Window length")
     parser.add_argument("--temp_dir", required=True, help="Path to temporary directory")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
@@ -76,6 +80,7 @@ def get_residue_range(pdb_file):
                     resi = int(line[22:26].strip())
                     resi_numbers.append(resi)
                 except ValueError:
+                    print(f"Warning: Could not parse residue number from line: {line.strip()}", file=sys.stderr)
                     continue
     if not resi_numbers:
         raise ValueError("No residue numbers found in the PDB file.")
@@ -122,6 +127,7 @@ def run_EvoEF2(pdb_path):
                     total_val = float(m.group(1))
                 except ValueError:
                     total_val = None
+                    print(f"Warning: Could not convert EvoEF2 total value to float from line: {line}", file=sys.stderr)
                 break
     if total_val is None:
         raise ValueError(f"Could not parse EvoEF2 total from output:\n{output}")
@@ -171,50 +177,150 @@ def run_fix_broken_pdb_chain(input_pdb, output_pdb):
 
 def main():
     args = parse_arguments()
-    input_basename = os.path.splitext(os.path.basename(args.input))[0]
-    base_temp_dir = os.path.join(args.temp_dir, input_basename)
-    safe_makedir(base_temp_dir)
-
-    # Run fix_broken_pdb_chain and filter nonstandard amino acids.
-    fixed_pdb = os.path.join(base_temp_dir, "input.pdb")
-    run_fix_broken_pdb_chain(args.input, fixed_pdb)
-    filter_nonstandard_amino_acids(fixed_pdb)
-    if args.verbose:
-        print(f"Fixed and filtered pdb saved to {fixed_pdb}")
-
-    # Get the residue range from the fixed pdb.
-    try:
-        resi_start, resi_end = get_residue_range(fixed_pdb)
-    except ValueError as e:
-        print(e, file=sys.stderr)
+    trunct_pdb_path = []
+    if args.input:
+        n = 1
+        assert args.iface is not None, "--iface must be provided when using --input"
+    elif args.input_csv:
+        df_input = pd.read_csv(args.input_csv)
+        n = len(df_input)
+    else:
+        print("Either --input or --input_csv must be provided.", file=sys.stderr)
         sys.exit(1)
-    pdb_length = resi_end - resi_start + 1
-    if args.verbose:
-        print(f"PDB residue range: {resi_start} to {resi_end} (length {pdb_length})")
 
-    # If the pdb is shorter than --length, run EvoEF2 once on the fixed pdb.
-    if pdb_length < args.length:
+    for idx in tqdm(range(n), desc="Processing PDBs"):
+        if args.input:
+            input_pdb = args.input
+            input_basename = os.path.splitext(os.path.basename(input_pdb))[0]
+            iface_array = parse_iface(args.iface)
+            base_temp_dir = os.path.join(args.temp_dir, input_basename)
+            safe_makedir(base_temp_dir)
+            # Run fix_broken_pdb_chain and filter nonstandard amino acids.
+            fixed_pdb = os.path.join(base_temp_dir, "input.pdb")
+            run_fix_broken_pdb_chain(args.input, fixed_pdb)
+        else:
+            input_pdb = df_input.iloc[idx]["matched_protein_path"]
+            input_basename = os.path.splitext(os.path.basename(input_pdb))[0]
+            iface_str = df_input.iloc[idx]["binder_iface_residues"]
+            iface_array = parse_iface(iface_str)
+            base_temp_dir = os.path.join(args.temp_dir, input_basename)
+            safe_makedir(base_temp_dir)
+            # Run fix_broken_pdb_chain and filter nonstandard amino acids.
+            fixed_pdb = os.path.join(base_temp_dir, "input.pdb")
+            run_fix_broken_pdb_chain(input_pdb, fixed_pdb)
+
+        filter_nonstandard_amino_acids(fixed_pdb)
         if args.verbose:
-            print(f"PDB length {pdb_length} is less than the specified window length {args.length}.")
-            print("Running EvoEF2 on the fixed pdb without truncation.")
-        evoef2_total = run_EvoEF2(fixed_pdb)
+            print(f"Fixed and filtered pdb saved to {fixed_pdb}")
+
+        # Get the residue range from the fixed pdb.
+        try:
+            resi_start, resi_end = get_residue_range(fixed_pdb)
+        except ValueError as e:
+            print(e, file=sys.stderr)
+            sys.exit(1)
+        pdb_length = resi_end - resi_start + 1
         if args.verbose:
-            print(f"EvoEF2 score for fixed pdb: {evoef2_total}")
-        best_file = fixed_pdb
-        # If out_dir is provided, copy the fixed pdb file to out_dir with new filename.
+            print(f"PDB residue range: {resi_start} to {resi_end} (length {pdb_length})")
+
+        # If the pdb is shorter than --length, run EvoEF2 once on the fixed pdb.
+        if pdb_length < args.length:
+            if args.verbose:
+                print(f"PDB length {pdb_length} is less than the specified window length {args.length}.")
+                print("Running EvoEF2 on the fixed pdb without truncation.")
+            evoef2_total = run_EvoEF2(fixed_pdb)
+            if args.verbose:
+                print(f"EvoEF2 score for fixed pdb: {evoef2_total}")
+            best_file = fixed_pdb
+            # If out_dir is provided, copy the fixed pdb file to out_dir with new filename.
+            if args.out_dir:
+                try:
+                    os.makedirs(args.out_dir, exist_ok=True)
+                    dest_filename = f"{input_basename}_{resi_start}_{resi_end}_{int(round(evoef2_total))}.pdb"
+                    dest_path = os.path.join(args.out_dir, dest_filename)
+                    shutil.copy(fixed_pdb, dest_path)
+                    best_file = dest_path
+                    if args.verbose:
+                        print(f"Copied fixed pdb file to {dest_path}")
+                except Exception as e:
+                    if args.verbose:
+                        print(f"Error copying fixed pdb file: {e}", file=sys.stderr)
+            # Clean up if requested.
+            if args.clean:
+                try:
+                    shutil.rmtree(base_temp_dir)
+                    if args.verbose:
+                        print(f"Cleaned up intermediate files in {base_temp_dir}")
+                except Exception as e:
+                    if args.verbose:
+                        print(f"Error cleaning up intermediate files: {e}", file=sys.stderr)
+            print(best_file)
+            return
+
+        # Else, continue with truncation procedure.
+        trunc_dir = os.path.join(base_temp_dir, "truncate")
+        os.makedirs(trunc_dir, exist_ok=True)
+        
+        min_iface, max_iface = remove_outliers(iface_array, args.length)
+
+        trunc_resi_start = list(range(max_iface - args.length + 1, min_iface + 1))
+        trunc_resi_end = [start + args.length - 1 for start in trunc_resi_start]
+
+        summary = []
+        for start, end in zip(trunc_resi_start, trunc_resi_end):
+            out_filename = f"{input_basename}_{start}_{end}.pdb"
+            out_pdb = os.path.join(trunc_dir, out_filename)
+            truncate_pdb_by_residue(fixed_pdb, out_pdb, start, end)
+            try:
+                evoef2_total = run_EvoEF2(out_pdb)
+            except Exception as e:
+                if args.verbose:
+                    print(f"Error running EvoEF2 for {out_pdb}: {e}", file=sys.stderr)
+                continue
+            summary.append({
+                "pdb_path": out_pdb,
+                "trunc_resi_start": start,
+                "trunc_resi_end": end,
+                "EvoEF2": evoef2_total
+            })
+            if args.verbose:
+                print(f"Processed {out_pdb} with EvoEF2 score {evoef2_total}")
+
+        csv_path = os.path.join(base_temp_dir, f"{input_basename}_EvoEF2_trunc.csv")
+        with open(csv_path, "w", newline="") as csvfile:
+            fieldnames = ["pdb_path", "trunc_resi_start", "trunc_resi_end", "EvoEF2"]
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames, delimiter="\t")
+            writer.writeheader()
+            for row in summary:
+                row["EvoEF2"] = int(round(row["EvoEF2"]))
+                writer.writerow(row)
+        if args.verbose:
+            print(f"Summary CSV saved to {csv_path}")
+
+        if not summary:
+            if args.verbose:
+                print("No EvoEF2 results available.", file=sys.stderr)
+            sys.exit(1)
+        best = min(summary, key=lambda x: x["EvoEF2"])
+        best_file = best["pdb_path"]
+        if args.verbose:
+            print(f"Best truncation: start {best['trunc_resi_start']}, end {best['trunc_resi_end']}, EvoEF2 score {int(round(best['EvoEF2']))}")
+
+        # If out_dir is provided, copy the best pdb file to that directory with the updated filename.
         if args.out_dir:
             try:
                 os.makedirs(args.out_dir, exist_ok=True)
-                dest_filename = f"{input_basename}_{resi_start}_{resi_end}_{int(round(evoef2_total))}.pdb"
+                dest_filename = f"{input_basename}_{best['trunc_resi_start']}_{best['trunc_resi_end']}_{int(round(best['EvoEF2']))}.pdb"
                 dest_path = os.path.join(args.out_dir, dest_filename)
-                shutil.copy(fixed_pdb, dest_path)
+                shutil.copy(best["pdb_path"], dest_path)
                 best_file = dest_path
                 if args.verbose:
-                    print(f"Copied fixed pdb file to {dest_path}")
+                    print(f"Copied best pdb file to {dest_path}")
             except Exception as e:
                 if args.verbose:
-                    print(f"Error copying fixed pdb file: {e}", file=sys.stderr)
-        # Clean up if requested.
+                    print(f"Error copying best pdb file: {e}", file=sys.stderr)
+
+        # If --clean flag is set, remove the temporary directory with intermediate files.
         if args.clean:
             try:
                 shutil.rmtree(base_temp_dir)
@@ -223,85 +329,12 @@ def main():
             except Exception as e:
                 if args.verbose:
                     print(f"Error cleaning up intermediate files: {e}", file=sys.stderr)
-        print(best_file)
-        return
 
-    # Else, continue with truncation procedure.
-    trunc_dir = os.path.join(base_temp_dir, "truncate")
-    os.makedirs(trunc_dir, exist_ok=True)
-
-    iface_array = parse_iface(args.iface)
-    min_iface, max_iface = remove_outliers(iface_array, args.length)
-
-    trunc_resi_start = list(range(max_iface - args.length + 1, min_iface + 1))
-    trunc_resi_end = [start + args.length - 1 for start in trunc_resi_start]
-
-    summary = []
-    for start, end in zip(trunc_resi_start, trunc_resi_end):
-        out_filename = f"{input_basename}_{start}_{end}.pdb"
-        out_pdb = os.path.join(trunc_dir, out_filename)
-        truncate_pdb_by_residue(fixed_pdb, out_pdb, start, end)
-        try:
-            evoef2_total = run_EvoEF2(out_pdb)
-        except Exception as e:
-            if args.verbose:
-                print(f"Error running EvoEF2 for {out_pdb}: {e}", file=sys.stderr)
-            continue
-        summary.append({
-            "pdb_path": out_pdb,
-            "trunc_resi_start": start,
-            "trunc_resi_end": end,
-            "EvoEF2": evoef2_total
-        })
-        if args.verbose:
-            print(f"Processed {out_pdb} with EvoEF2 score {evoef2_total}")
-
-    csv_path = os.path.join(base_temp_dir, f"{input_basename}_EvoEF2_trunc.csv")
-    with open(csv_path, "w", newline="") as csvfile:
-        fieldnames = ["pdb_path", "trunc_resi_start", "trunc_resi_end", "EvoEF2"]
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames, delimiter="\t")
-        writer.writeheader()
-        for row in summary:
-            row["EvoEF2"] = int(round(row["EvoEF2"]))
-            writer.writerow(row)
-    if args.verbose:
-        print(f"Summary CSV saved to {csv_path}")
-
-    if not summary:
-        if args.verbose:
-            print("No EvoEF2 results available.", file=sys.stderr)
-        sys.exit(1)
-    best = min(summary, key=lambda x: x["EvoEF2"])
-    best_file = best["pdb_path"]
-    if args.verbose:
-        print(f"Best truncation: start {best['trunc_resi_start']}, end {best['trunc_resi_end']}, EvoEF2 score {int(round(best['EvoEF2']))}")
-
-    # If out_dir is provided, copy the best pdb file to that directory with the updated filename.
-    if args.out_dir:
-        try:
-            os.makedirs(args.out_dir, exist_ok=True)
-            dest_filename = f"{input_basename}_{best['trunc_resi_start']}_{best['trunc_resi_end']}_{int(round(best['EvoEF2']))}.pdb"
-            dest_path = os.path.join(args.out_dir, dest_filename)
-            shutil.copy(best["pdb_path"], dest_path)
-            best_file = dest_path
-            if args.verbose:
-                print(f"Copied best pdb file to {dest_path}")
-        except Exception as e:
-            if args.verbose:
-                print(f"Error copying best pdb file: {e}", file=sys.stderr)
-
-    # If --clean flag is set, remove the temporary directory with intermediate files.
-    if args.clean:
-        try:
-            shutil.rmtree(base_temp_dir)
-            if args.verbose:
-                print(f"Cleaned up intermediate files in {base_temp_dir}")
-        except Exception as e:
-            if args.verbose:
-                print(f"Error cleaning up intermediate files: {e}", file=sys.stderr)
-
-    print(best_file)
-
-
+        trunct_pdb_path.append(best_file)
+    if args.input_csv:
+        df_input['trunc_binder_path'] = trunct_pdb_path
+        output_csv_path = os.path.splitext(args.input_csv)[0] + "_truncated_results.csv"
+        df_input.to_csv(output_csv_path, index=False)
+        
 if __name__ == "__main__":
     main()

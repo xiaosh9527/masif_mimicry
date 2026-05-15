@@ -15,17 +15,15 @@ elif version.parse('0.6.0') < version.parse(o3d.__version__):
 else:
     ICPConvergenceCriteria = o3d.ICPConvergenceCriteria
 
-def set_params(target_root: str, masif_db_root: str = "/work/lpdi/users/shxiao/scratch/masif_seed/masif", db_name: str = "masif_oas", masif_app: str = "ppi_search") -> dict:
+def set_params(*, database_dir: str, target_preprocess_dir: str, masif_app: str = "ppi_search") -> dict:
     '''
     Set the parameters for the mimicry search.
     '''
     params = {}
-    # Directory where the database is located.
-    params["masif_db_root"] = masif_db_root
     # Seeds (i.e., the fragments) that will be used for this search.
-    params["top_seed_dir"] = os.path.join(params["masif_db_root"], f"data/{db_name}/")
+    params["top_seed_dir"] = os.path.normpath(database_dir)
     # Root of the targets directory (where to find the sources.)
-    params["masif_target_root"] = target_root
+    params["masif_target_root"] = os.path.normpath(target_preprocess_dir)
     # Output directory (target_name, target_site, matched_seed)
     params["out_dir_template"] = "tmp/{}/"
 

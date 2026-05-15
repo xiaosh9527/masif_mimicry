@@ -26,10 +26,8 @@ apptainer exec \
     export PYTHONPATH="$PYTHONPATH:$masif_db_source:$masif_seed_source:$masif_mimicry_source:$PWD"
 
     python -u "$masif_mimicry_source/masif_mimicry_search.py" \
-      --seed_db_root "$masif_db_root" \
-      --seed_db masif_human_proteome \
-      --target_db_root "$masif_mimicry_root" \
-      --target_db template \
+      --database_dir "$masif_db_root/data/masif_human_proteome" \
+      --target_preprocess_dir "$masif_mimicry_root/data/template" \
       --target_pdb 6h0g_C_B \
       --target_chain C \
       --target_residue 423 \

@@ -12,10 +12,8 @@ masif_mimicry_source=$masif_mimicry_root/source
 export PYTHONPATH=$PYTHONPATH:$masif_db_source:$masif_seed_source:$masif_mimicry_source:`pwd`
 
 python -u $masif_mimicry_source/masif_mimicry_search.py \
---seed_db_root $masif_db_root \
---seed_db masif_human_proteome \
---target_db_root $masif_seed_root \
---target_db masif_mimicry_search \
+--database_dir $masif_db_root/data/masif_human_proteome \
+--target_preprocess_dir $masif_seed_root/data/masif_mimicry_search \
 --target_pdb 6h0g_C_B \
 --target_chain C \
 --target_residue 423 \

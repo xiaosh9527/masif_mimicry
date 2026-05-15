@@ -9,3 +9,8 @@ data/template/logs/*
 data/template/targets/*
 data/template/results/*
 data/template/tmp/*
+data/
+__pycache__
+masif_mimicry.sif
+.agents
+skills-lock.json

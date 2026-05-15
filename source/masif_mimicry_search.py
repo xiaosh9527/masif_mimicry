@@ -23,12 +23,14 @@ def create_parser():
     p.add_argument("--target_ppi_id", choices=["p1", "p2"], default="p1", help="ppi side of the target to align to")
     p.add_argument("--target_chain", type=str, required=True, help="Target chain id (single char) for sanity checks")
 
-    # Optional: allow user to specify a target residue/atom/chain to select nearest surface points
-    p.add_argument("--target_residue", type=int, help="Target residue number (integer). If provided with --target_atom and --target_chain, nearest surface points will be selected around this residue.")
+    # Optional: allow user to specify a target residue/atom/chain to select surface points near that atom
+    p.add_argument("--target_residue", type=int, help="Target residue number (integer). If provided with --target_atom and --target_chain, surface sites are selected within --target_sampling_radius and subsampled with FPS.")
     p.add_argument("--target_atom", type=str, help="Target atom name (e.g., CA, NZ). Used together with --target_residue to find nearby surface vertices.")
+    p.add_argument("--target_sampling_radius", type=float, default=5.0,
+                   help="Radius (A) around --target_atom for candidate vertices (residue-target mode only)")
 
     # Selection and thresholds
-    p.add_argument("--num_points", type=int, default=5, help="Number of nearest points to select when a residue/atom is specified")
+    p.add_argument("--num_points", type=int, default=5, help="Number of target sites after FPS subsampling (residue-target mode only)")
     p.add_argument("--downsample", type=int, default=1, help="Downsample rate for site selection")
     p.add_argument("--top_iface_percent", type=float, default=0.0, help="Top percentile of points based on interface score value to prioritize")
     p.add_argument("--iface_cutoff", type=float, default=0.0, help="Interface score cutoff")
@@ -50,20 +52,28 @@ def write_target_vert_files(p2_all_feats, selected_points_idx, target_ppi_id, ou
     """Write full geodesic patch vertices for each selected target site."""
     vert_dir = os.path.join(output_dir, 'target_vert')
     os.makedirs(vert_dir, exist_ok=True)
-    for site_vix in selected_points_idx:
-        target_patch, _, _ = get_patch_geo(
-            p2_all_feats['pcd'],
-            p2_all_feats['indices'],
-            site_vix,
-            p2_all_feats['desc'],
-            flip_normals=False,
-            outward_shift=outward_shift,
-        )
-        vert_path = os.path.join(vert_dir, f'{target_ppi_id}_{site_vix}.vert')
-        with open(vert_path, 'w') as out_patch:
-            for point in target_patch.points:
-                out_patch.write('{}, {}, {}\n'.format(point[0], point[1], point[2]))
-    print(f'Wrote {len(selected_points_idx)} patch files to {vert_dir}', flush=True)
+    pcd_points = np.asarray(p2_all_feats['pcd'].points)
+    centers_path = os.path.join(vert_dir, 'target.vert')
+    with open(centers_path, 'w') as out_centers:
+        for site_vix in selected_points_idx:
+            center = pcd_points[site_vix]
+            out_centers.write('{}, {}, {}\n'.format(center[0], center[1], center[2]))
+            target_patch, _, _ = get_patch_geo(
+                p2_all_feats['pcd'],
+                p2_all_feats['indices'],
+                site_vix,
+                p2_all_feats['desc'],
+                flip_normals=False,
+                outward_shift=outward_shift,
+            )
+            vert_path = os.path.join(vert_dir, f'{target_ppi_id}_{site_vix}.vert')
+            with open(vert_path, 'w') as out_patch:
+                for point in target_patch.points:
+                    out_patch.write('{}, {}, {}\n'.format(point[0], point[1], point[2]))
+    print(
+        f'Wrote {len(selected_points_idx)} patch files and {centers_path} to {vert_dir}',
+        flush=True,
+    )
 
 
 def log(msg):
@@ -107,15 +117,27 @@ def main(args):
     P2_all_feats = get_features(params, P2, args.target_ppi_id, source=False, flip_desc=False)
 
     if args.target_residue and args.target_chain and args.target_atom:
-        P2_patch_iface = P2_all_feats['iface'][0]
-        P2_nearest_points_idx = res2surf(np.array(P2_all_feats['mesh'].vertices), P2_all_feats['pdb'], chain = args.target_chain, residue = args.target_residue, atom_name = args.target_atom, k = 10)
-        P2_nearest_points_iface = P2_patch_iface[P2_nearest_points_idx[0]]
-        P2_selected_points_idx = P2_nearest_points_idx[0][P2_nearest_points_iface.argsort()[::-1][:args.num_points]]
-        P2_patch_descs = []
-        for idx in P2_selected_points_idx:
-            P2_patch_descs.append(P2_all_feats['desc'][idx])
-        P2_patch_descs = np.array(P2_patch_descs)
-        print(f'Searching sites similar to {P2} from {",".join(set(lines))}. \nThis will go through {len(P2_selected_points_idx)} points near residue {args.target_residue} in {P2} chain {args.target_chain}...')
+        try:
+            P2_selected_points_idx = select_target_sites_by_radius_fps(
+                np.array(P2_all_feats['mesh'].vertices),
+                P2_all_feats['pdb'],
+                chain=args.target_chain,
+                residue=args.target_residue,
+                atom_name=args.target_atom,
+                radius=args.target_sampling_radius,
+                num_points=args.num_points,
+            )
+        except ValueError as e:
+            print(f'Error: {e}', flush=True)
+            sys.exit(1)
+        P2_patch_descs = P2_all_feats['desc'][P2_selected_points_idx]
+        print(
+            f'Searching sites similar to {P2} from {",".join(set(lines))}. \n'
+            f'This will go through {len(P2_selected_points_idx)} points within '
+            f'{args.target_sampling_radius} A of {args.target_atom} on residue '
+            f'{args.target_residue} in {P2} chain {args.target_chain}...',
+            flush=True,
+        )
     else:
         P2_selected_points_idx, P2_patch_descs, P2_patch_iface = select_patches(
             P2_all_feats,

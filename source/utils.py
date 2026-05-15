@@ -158,6 +158,80 @@ def surf2atom(
             
     return nearest_atom, nearest_atom_ss
 
+def get_atom_coords(pdb_path: str, chain: str, residue: int, atom_name: str) -> np.ndarray:
+    """Return Nx3 coordinates for all atoms matching chain/residue/atom_name."""
+    parser = PDBParser(QUIET=True)
+    struct = parser.get_structure('target', pdb_path)
+    atoms = [
+        atom for atom in struct.get_atoms()
+        if atom.get_parent().get_id()[1] == residue
+        and atom.get_parent().get_parent().get_id() == chain
+        and atom.get_id() == atom_name
+    ]
+    if len(atoms) == 0:
+        raise ValueError(
+            f'No atom {atom_name} found on chain {chain} residue {residue} in {pdb_path}'
+        )
+    return np.array([atom.get_coord() for atom in atoms])
+
+
+def farthest_point_subsample(coords: np.ndarray, num_points: int, seed_idx: int = 0) -> np.ndarray:
+    """Farthest-point sampling on discrete 3D points; returns local indices into coords."""
+    n = len(coords)
+    if n == 0:
+        return np.array([], dtype=int)
+    k = min(num_points, n)
+    selected = [seed_idx]
+    if k == 1:
+        return np.array(selected, dtype=int)
+    min_dists_sq = np.sum((coords - coords[seed_idx]) ** 2, axis=1)
+    min_dists_sq[seed_idx] = -1.0
+    for _ in range(k - 1):
+        next_idx = int(np.argmax(min_dists_sq))
+        selected.append(next_idx)
+        new_dists_sq = np.sum((coords - coords[next_idx]) ** 2, axis=1)
+        min_dists_sq = np.minimum(min_dists_sq, new_dists_sq)
+        min_dists_sq[next_idx] = -1.0
+    return np.array(selected, dtype=int)
+
+
+def select_target_sites_by_radius_fps(
+    mesh_vertices: np.ndarray,
+    pdb_path: str,
+    chain: str,
+    residue: int,
+    atom_name: str,
+    radius: float,
+    num_points: int,
+) -> np.ndarray:
+    """
+    Select target surface sites within radius (A) of an atom, then FPS to num_points.
+    Returns sorted global vertex indices. Warns if fewer than num_points candidates (B1).
+    """
+    mesh_coords = np.asarray(mesh_vertices)
+    atom_coords = get_atom_coords(pdb_path, chain, residue, atom_name)
+    dists = np.linalg.norm(mesh_coords[:, None, :] - atom_coords[None, :, :], axis=-1)
+    min_dists = dists.min(axis=1)
+    candidates = np.where(min_dists <= radius)[0]
+    if len(candidates) == 0:
+        raise ValueError(
+            f'No surface vertices within {radius} A of {atom_name} '
+            f'chain {chain} residue {residue} in {pdb_path}'
+        )
+    if len(candidates) < num_points:
+        print(
+            f'WARNING: Only {len(candidates)} vertices within {radius} A of '
+            f'{atom_name} chain {chain} residue {residue}; using all '
+            f'(requested {num_points}).',
+            flush=True,
+        )
+        return np.sort(candidates)
+    candidate_coords = mesh_coords[candidates]
+    seed_local = int(np.argmin(min_dists[candidates]))
+    local_selected = farthest_point_subsample(candidate_coords, num_points, seed_idx=seed_local)
+    return np.sort(candidates[local_selected])
+
+
 def res2surf(point_coords: np.ndarray, pdb_path: str, chain: str, residue: int, atom_name: str, k: int = 1) -> np.ndarray:
     '''
     This function takes the pdb file and the surface point coordinates and returns the closest surface points to a given residue/atom
@@ -173,11 +247,8 @@ def res2surf(point_coords: np.ndarray, pdb_path: str, chain: str, residue: int, 
     Returns:
         nearest_points_idx: Indices of the closest surface points to the specified atom
     '''
-    parser = PDBParser(QUIET=True)
-    struct = parser.get_structure('target', pdb_path)
-    atoms = [atom for atom in struct.get_atoms() if atom.get_parent().get_id()[1]==residue and atom.get_parent().get_parent().get_id()==chain and atom.get_id()==atom_name]
-    atom_coords = np.array([atom.get_coord() for atom in atoms])
-    
+    atom_coords = get_atom_coords(pdb_path, chain, residue, atom_name)
+
     # NOTE: this will register the atom/residue to the closest points
     point_cdktree = cKDTree(point_coords)
     d, nearest_points_idx = point_cdktree.query(atom_coords, k=k)
@@ -284,7 +355,7 @@ def multidock(
     binder_align: bool = False, ransac_skip: bool = False
 ):
     ransac_radius=1.5
-    ransac_iter=2000
+    ransac_iter=10000
     all_results = []
     all_source_patch = []
     all_source_scores = []

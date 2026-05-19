@@ -5,21 +5,21 @@
 #SBATCH --cpus-per-task 1
 #SBATCH --mem 6G
 #SBATCH --time 02:00:00
-#SBATCH --array=1
+#SBATCH --array=0
 #SBATCH --output logs/mimicry_%A/slurm_%A_%a.out
 #SBATCH --error logs/mimicry_%A/slurm_%A_%a.out
 
 set -euo pipefail
 
 # User specific path:
-masif_root=/scratch/ymeng/masif_mimicry_refactoring_2/masif_seed
+masif_root=/scratch/ymeng/masif_seed
 
 # Run specific paths:
-# DATABASE_DIR="/scratch/ymeng/TED_domainome/output"
-# DATABASE_SUBSET_DIR="/scratch/ymeng/TED_domainome/output/filtered_intracellular_domainome/subsets"
+DATABASE_DIR="/scratch/ymeng/TED_domainome/output"
+DATABASE_SUBSET_DIR="/scratch/ymeng/TED_domainome/output/filtered_intracellular_domainome/subsets"
 
-DATABASE_DIR="/work/lpdi/users/shxiao/masif_seed/masif/data/masif_human_proteome_domains_merged"
-DATABASE_SUBSET_DIR="/work/lpdi/users/schneuing/tricomplex-design/search_lists/filtered20251016"
+# DATABASE_DIR="/work/lpdi/users/shxiao/masif_seed/masif/data/masif_human_proteome_domains_merged"
+# DATABASE_SUBSET_DIR="/work/lpdi/users/schneuing/tricomplex-design/search_lists/filtered20251016"
 TARGET_PREPROCESS_DIR="data/NUP98"
 TARGET_PDB="021structure_C_AB"
 TARGET_CHAIN="C"

@@ -465,16 +465,55 @@ def compute_descriptor_score(
     return float(np.tanh(desc_dist_score / 80))
 
 
+def parse_partner_chain_ids(pdb_identifier, target_ppi_id):
+    """
+    Return partner chain id(s) for clash counting from a MaSIF PDB identifier.
+
+    MaSIF ids use PDB_p1field_p2field where each field is one chain id or several
+    concatenated single-character chain ids (e.g. AB = chains A and B as one partner).
+
+    Examples:
+      021structure_C_AB, target_ppi_id p1 -> ['A', 'B']  (p2 partner of chain C)
+      021structure_C_AB, target_ppi_id p2 -> ['C']       (p1 partner of chains A+B)
+    """
+    parts = pdb_identifier.split('_')
+    if target_ppi_id == 'p1':
+        if len(parts) < 3:
+            raise ValueError(
+                f'Cannot parse partner chains from {pdb_identifier!r} with target_ppi_id p1'
+            )
+        raw = parts[2]
+    else:
+        if len(parts) < 2:
+            raise ValueError(
+                f'Cannot parse partner chains from {pdb_identifier!r} with target_ppi_id p2'
+            )
+        raw = parts[1]
+    return _chain_ids_for_filter(raw)
+
+
+def _chain_ids_for_filter(target_chain):
+    """Normalize chain argument(s) to a list of chain ids for membership tests."""
+    if isinstance(target_chain, (list, tuple)):
+        return [str(c) for c in target_chain]
+    if isinstance(target_chain, str):
+        if len(target_chain) == 1:
+            return [target_chain]
+        # Concatenated ids, e.g. AB -> chains A and B
+        return list(target_chain)
+    return [str(target_chain)]
+
+
 def get_filtered_target_structure(target_pdb_path, target_chain, cache):
     """Parse target PDB once and cache chain-filtered structure for clash counting."""
-    chain_key = tuple(target_chain) if isinstance(target_chain, (list, tuple)) else (target_chain,)
-    key = (os.path.abspath(target_pdb_path), chain_key)
+    chain_ids = _chain_ids_for_filter(target_chain)
+    key = (os.path.abspath(target_pdb_path), tuple(chain_ids))
     if key not in cache:
         pdb_parser = PDBParser(QUIET=True)
         target_structure = pdb_parser.get_structure('', target_pdb_path)
         chains_to_remove = [
             chain for chain in target_structure.get_chains()
-            if chain.id not in chain_key
+            if chain.id not in chain_ids
         ]
         for chain in chains_to_remove:
             target_structure[0].detach_child(chain.id)
@@ -579,6 +618,13 @@ def count_clashes(
     source_ca_coords = np.array([atom.get_coord() for atom in source_structure.get_atoms() if atom.get_id() == 'CA'])
 
     target_ca_coords = np.array([atom.get_coord() for atom in target_structure.get_atoms() if atom.get_id() == 'CA'])
+    if target_ca_coords.size == 0:
+        raise ValueError(
+            'Target structure has no CA atoms for clash counting; '
+            'check partner chain id and raw PDB chain labels.'
+        )
+    if target_ca_coords.ndim == 1:
+        target_ca_coords = target_ca_coords.reshape(-1, 3)
     target_pcd_tree = cKDTree(target_ca_coords)
 
     d_nn_ca, _ = target_pcd_tree.query(np.asarray(source_ca_coords), k=1, distance_upper_bound=radius)

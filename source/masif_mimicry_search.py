@@ -255,13 +255,14 @@ def main(args):
                         params['masif_target_root'],
                         'data_preparation', '00-raw_pdbs', f'{P2.split("_")[0]}.pdb',
                     )
-                    P2_p2_chain = P2.split('_')[-1]
+                    P2_partner_chain_ids = parse_partner_chain_ids(P2, args.target_ppi_id)
+                    P2_partner_chain_suffix = ''.join(P2_partner_chain_ids)
                     filtered_target_structure = get_filtered_target_structure(
-                        P2_raw_pdb, P2_p2_chain, target_structure_cache,
+                        P2_raw_pdb, P2_partner_chain_ids, target_structure_cache,
                     )
                 else:
                     P2_raw_pdb = None
-                    P2_p2_chain = None
+                    P2_partner_chain_suffix = None
                     filtered_target_structure = None
 
                 for i, P2_center in enumerate(P2_selected_points_idx):
@@ -336,7 +337,7 @@ def main(args):
                             io.set_structure(filtered_target_structure)
                             io.save(os.path.join(
                                 args.output_dir, f'{P2}_{args.output_postfix}',
-                                f'{P2.split("_")[0]}_{P2_p2_chain}.pdb',
+                                f'{P2.split("_")[0]}_{P2_partner_chain_suffix}.pdb',
                             ))
 
                         if args.compute_source_residues:

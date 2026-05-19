@@ -19,7 +19,7 @@ MASIF_DIR=../
 # We use the provided example target structure `6h0g.pdb` (ZNF692 in complex with CRBN and ligand B_Y70).
 
 PDB_ID="input/021structure.pdb"  # Example: ZNF692
-PDB_CHAIN="021structure_C_AB"  # Chain C (ZNF692) and chain B (CRBN)
+PDB_CHAIN="021structure_C_AB"  # p1: chain C; p2: chains A and B (partner structure)
 TARGET_OUTPUT_DIR="/workspace/masif_mimicry/data/NUP98/"  # Output directory for target PDB
 LIGAND="A_021"
 

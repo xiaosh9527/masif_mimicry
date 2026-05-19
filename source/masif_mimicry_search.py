@@ -387,7 +387,9 @@ def main(args):
                 log(f'Done {P1} ({ppi_id}): {total_matches} matches across {sites_aligned} sites')
 
                 if len(scores[(P1, P2)]['P1_id']) > 0:
-                    pd.DataFrame(scores[(P1, P2)]).to_csv(
+                    hit_df = pd.DataFrame(scores[(P1, P2)])
+                    hit_df = structural_clusters(hit_df, database_root=params['top_seed_dir'])
+                    hit_df.to_csv(
                         f'{seed_output_dir}/{P1}_{ppi_id}_to_{P2}_{args.target_ppi_id}.csv',
                         index=False,
                     )

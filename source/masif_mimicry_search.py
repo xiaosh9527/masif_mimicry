@@ -88,6 +88,27 @@ def flatten_transform(T, precision=16):
     return ','.join(f'{x:.{precision}f}' for x in np.asarray(T).reshape(-1))
 
 
+def get_usalign_tmscores(p1_pdb, p2_pdb, cache):
+    """Run USalign once per (p1_pdb, p2_pdb) pair; return (TMscore_P1, TMscore_P2)."""
+    key = (os.path.abspath(p1_pdb), os.path.abspath(p2_pdb))
+    if key not in cache:
+        process = Popen(
+            ["/install/USalign/USalign", p1_pdb, p2_pdb, '-mm', '0', '-ter', '2'],
+            stdout=PIPE, stderr=PIPE,
+        )
+        stdout, _ = process.communicate()
+        tmscore_list = [
+            float(x.split(' ')[1])
+            for x in stdout.decode().splitlines()
+            if 'TM-score=' in x
+        ]
+        cache[key] = (
+            tmscore_list[0] if tmscore_list else 0.0,
+            tmscore_list[1] if len(tmscore_list) > 1 else 0.0,
+        )
+    return cache[key]
+
+
 def main(args):
     P2 = args.target_pdb
     local_tmp_dir = os.getenv('TMPDIR')
@@ -189,6 +210,8 @@ def main(args):
     else:
         print(f'Aligning to interface points only with desc dist < {args.desc_dist_cutoff}.')
 
+    tmscore_cache = {}
+
     for P1 in lines:
 
         if len(P1.split('_')) == 2:
@@ -288,12 +311,9 @@ def main(args):
                                 )
                                 P1_nearest_res = P1_nearest_atom[0].get_parent().get_id()[1]
 
-                            # Compute TMscore using USalign
-                            process = Popen(["/install/USalign/USalign", P1_all_feats['pdb'], P2_all_feats['pdb'], '-mm', '0', '-ter', '2'], stdout=PIPE, stderr=PIPE)
-                            stdout, _ = process.communicate()
-                            TMscore_list = [float(x.split(' ')[1]) for x in stdout.decode().splitlines() if 'TM-score=' in x]
-                            TMscore_P1 = TMscore_list[0] if TMscore_list else 0.0
-                            TMscore_P2 = TMscore_list[1] if len(TMscore_list) > 1 else 0.0
+                            TMscore_P1, TMscore_P2 = get_usalign_tmscores(
+                                P1_all_feats['pdb'], P2_all_feats['pdb'], tmscore_cache,
+                            )
 
                             scores[(P1, P2)]['P1_id'].append(P1)
                             scores[(P1, P2)]['P2_id'].append(P2)

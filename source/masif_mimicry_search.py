@@ -1,4 +1,4 @@
-import os, sys, glob, shutil, pickle, csv, argparse, copy
+import os, sys, glob, shutil, pickle, csv, argparse, tempfile
 import numpy as np
 import pandas as pd
 
@@ -112,6 +112,10 @@ def get_usalign_tmscores(p1_pdb, p2_pdb, cache):
 def main(args):
     P2 = args.target_pdb
     local_tmp_dir = os.getenv('TMPDIR')
+    if not local_tmp_dir or not os.path.isdir(local_tmp_dir):
+        local_tmp_dir = tempfile.mkdtemp(prefix='masif_mimicry_')
+    else:
+        os.makedirs(local_tmp_dir, exist_ok=True)
     
     if args.target_ppi_id not in ['p1', 'p2']:
         print('Please specify target_ppi_id as either p1 or p2')
@@ -211,6 +215,7 @@ def main(args):
         print(f'Aligning to interface points only with desc dist < {args.desc_dist_cutoff}.')
 
     tmscore_cache = {}
+    target_structure_cache = {}
 
     for P1 in lines:
 
@@ -245,6 +250,20 @@ def main(args):
                 total_matches = 0
                 sites_aligned = 0
 
+                if args.count_clashes:
+                    P2_raw_pdb = os.path.join(
+                        params['masif_target_root'],
+                        'data_preparation', '00-raw_pdbs', f'{P2.split("_")[0]}.pdb',
+                    )
+                    P2_p2_chain = P2.split('_')[-1]
+                    filtered_target_structure = get_filtered_target_structure(
+                        P2_raw_pdb, P2_p2_chain, target_structure_cache,
+                    )
+                else:
+                    P2_raw_pdb = None
+                    P2_p2_chain = None
+                    filtered_target_structure = None
+
                 for i, P2_center in enumerate(P2_selected_points_idx):
                     P1_selected_points_idx_final = P1_selected_points_idx[np.where(desc_dist[:, i] < args.desc_dist_cutoff)]
 
@@ -266,73 +285,97 @@ def main(args):
                     for j, (result, P1_center) in enumerate(zip(all_results, P1_selected_points_idx_final)):
                         out_filename_base = f'{P1}_{ppi_id}_{P1_center}_to_{P2}_{args.target_ppi_id}_{P2_center}'
 
-                        P1_pcd = copy.deepcopy(P1_all_feats['pcd'])
-                        P1_pcd.transform(result.transformation)
-                        _ = transform_structure(P1_all_feats['pdb'], result.transformation, os.path.join(local_tmp_dir, f'{out_filename_base}.pdb'))
+                        P1_patch_coords = transform_patch_coords(
+                            P1_all_feats['pcd'],
+                            P1_all_feats['indices'],
+                            P1_center,
+                            result.transformation,
+                        )
+                        descriptor_score = compute_descriptor_score(
+                            P1_patch_coords,
+                            P1_all_feats['desc'],
+                            P1_all_feats['indices'],
+                            P1_center,
+                            P2_all_feats['pcd'],
+                            P2_all_feats['desc'],
+                            P2_all_feats['indices'],
+                            P2_center,
+                        )
+
+                        if descriptor_score < args.desc_dist_score_cutoff:
+                            continue
+
+                        tmp_pdb_path = os.path.join(local_tmp_dir, f'{out_filename_base}.pdb')
+                        _ = transform_structure(
+                            P1_all_feats['pdb'], result.transformation, tmp_pdb_path,
+                        )
 
                         if args.count_clashes:
-                            P2_raw_pdb = os.path.join(params['masif_target_root'], 'data_preparation', '00-raw_pdbs', f'{P2.split("_")[0]}.pdb')
-                            P2_p2_chain = P2.split('_')[-1]
-                            output, target_structure = compute_score_and_clashes(
-                                P1_pdb = os.path.join(local_tmp_dir, f'{out_filename_base}.pdb'), P1_pcd = P1_pcd, P1_descs = P1_all_feats['desc'], P1_site = P1_center, P1_indices = P1_all_feats['indices'],
-                                P2_pdb = P2_all_feats['pdb'], P2_pcd = P2_all_feats['pcd'], P2_descs = P2_all_feats['desc'], P2_site = P2_center, P2_indices = P2_all_feats['indices'],
-                                compute_clashes = True, target_structure = P2_raw_pdb, target_chain = P2_p2_chain, ca_clash_threshold = args.ca_clash_threshold, heavy_atom_clash_threshold = args.heavy_atom_clash_threshold
+                            ca_clashes, heavy_clashes, masif_score = compute_hit_clash_score(
+                                tmp_pdb_path,
+                                filtered_target_structure,
+                                descriptor_score,
+                                ca_clash_threshold=args.ca_clash_threshold,
+                                heavy_atom_clash_threshold=args.heavy_atom_clash_threshold,
                             )
+                            if masif_score < args.desc_dist_score_cutoff:
+                                if os.path.exists(tmp_pdb_path):
+                                    os.remove(tmp_pdb_path)
+                                continue
                         else:
-                            output, target_structure = compute_score_and_clashes(
-                                P1_pdb = os.path.join(local_tmp_dir, f'{out_filename_base}.pdb'), P1_pcd = P1_pcd, P1_descs = P1_all_feats['desc'], P1_site = P1_center, P1_indices = P1_all_feats['indices'],
-                                P2_pdb = P2_all_feats['pdb'], P2_pcd = P2_all_feats['pcd'], P2_descs = P2_all_feats['desc'], P2_site = P2_center, P2_indices = P2_all_feats['indices'],
-                                compute_clashes = False
+                            ca_clashes, heavy_clashes = 0, 0
+                            masif_score = descriptor_score
+
+                        n_hits += 1
+                        os.makedirs(output_root, exist_ok=True)
+                        out_pdb_path = os.path.join(output_root, f'{out_filename_base}.pdb')
+                        shutil.move(tmp_pdb_path, out_pdb_path)
+
+                        if args.count_clashes:
+                            io = PDBIO()
+                            io.set_structure(filtered_target_structure)
+                            io.save(os.path.join(
+                                args.output_dir, f'{P2}_{args.output_postfix}',
+                                f'{P2.split("_")[0]}_{P2_p2_chain}.pdb',
+                            ))
+
+                        if args.compute_source_residues:
+                            target_atom, _ = surf2atom(
+                                point_coords=np.array(P2_all_feats['pcd'].points)[P2_center].reshape(1, -1),
+                                pdb_path=P2_all_feats['pdb'],
                             )
-                                                    
-                        score_ok = output[1] >= args.desc_dist_score_cutoff
-
-                        if score_ok:
-                            n_hits += 1
-                            os.makedirs(output_root, exist_ok=True)
-                            if target_structure is not None:
-                                io = PDBIO()
-                                io.set_structure(target_structure)
-                                io.save(os.path.join(args.output_dir, f'{P2}_{args.output_postfix}', f'{(P2.split("_")[0])}_{P2_p2_chain}.pdb'))
-
-                            shutil.move(os.path.join(local_tmp_dir, f'{out_filename_base}.pdb'), os.path.join(output_root, f'{out_filename_base}.pdb'))
-                            # P1_raw_pdb = os.path.join(params['top_seed_dir'], 'data_preparation', '00-raw_pdbs', f'{P1.split("_")[0]}.pdb')
-                            # _ = transform_structure(P1_raw_pdb, result.transformation, os.path.join(output_root, f'{P1.split("_")[0]}.pdb'))
-
-                            if args.compute_source_residues:
-                                target_atom, _ = surf2atom(
-                                    point_coords=np.array(P2_all_feats['pcd'].points)[P2_center].reshape(1, -1),
-                                    pdb_path=P2_all_feats['pdb'],
-                                )
-                                target_residue = target_atom[0].get_parent().get_id()[1]
-                                P1_nearest_atom, _ = surf2atom(
-                                    point_coords=np.array(P1_pcd.points)[P1_center].reshape(1, -1),
-                                    pdb_path=os.path.join(output_root, f'{out_filename_base}.pdb'),
-                                )
-                                P1_nearest_res = P1_nearest_atom[0].get_parent().get_id()[1]
-
-                            TMscore_P1, TMscore_P2 = get_usalign_tmscores(
-                                P1_all_feats['pdb'], P2_all_feats['pdb'], tmscore_cache,
+                            target_residue = target_atom[0].get_parent().get_id()[1]
+                            P1_center_coord = apply_transform(
+                                np.asarray(P1_all_feats['pcd'].points)[P1_center], result.transformation,
                             )
+                            P1_nearest_atom, _ = surf2atom(
+                                point_coords=P1_center_coord.reshape(1, -1),
+                                pdb_path=out_pdb_path,
+                            )
+                            P1_nearest_res = P1_nearest_atom[0].get_parent().get_id()[1]
 
-                            scores[(P1, P2)]['P1_id'].append(P1)
-                            scores[(P1, P2)]['P2_id'].append(P2)
-                            scores[(P1, P2)]['P1_source_ppi_id'].append(ppi_id)
-                            scores[(P1, P2)]['P2_source_ppi_id'].append(args.target_ppi_id)
-                            if args.compute_source_residues:
-                                scores[(P1, P2)]['P1_source_residue'].append(P1_nearest_res)
-                                scores[(P1, P2)]['P2_source_residue'].append(target_residue)
-                            scores[(P1, P2)]['P1_source_site'].append(P1_center)
-                            scores[(P1, P2)]['P2_source_site'].append(P2_center)
-                            scores[(P1, P2)]['P1_source_TMscore'].append(TMscore_P1)
-                            scores[(P1, P2)]['P2_source_TMscore'].append(TMscore_P2)
-                            scores[(P1, P2)]['P1_source_iface'].append(P1_all_feats['iface'][0][P1_center])
-                            scores[(P1, P2)]['P2_source_iface'].append(P2_all_feats['iface'][0][P2_center])
-                            scores[(P1, P2)]['MaSIF-score'].append(output[1])
-                            scores[(P1, P2)]['flattened_transform'].append(flatten_transform(result.transformation))
-                            if args.count_clashes:
-                                scores[(P1, P2)]['ca_clash'].append(output[0][0])
-                                scores[(P1, P2)]['heavy_atom_clash'].append(output[0][1])
+                        TMscore_P1, TMscore_P2 = get_usalign_tmscores(
+                            P1_all_feats['pdb'], P2_all_feats['pdb'], tmscore_cache,
+                        )
+
+                        scores[(P1, P2)]['P1_id'].append(P1)
+                        scores[(P1, P2)]['P2_id'].append(P2)
+                        scores[(P1, P2)]['P1_source_ppi_id'].append(ppi_id)
+                        scores[(P1, P2)]['P2_source_ppi_id'].append(args.target_ppi_id)
+                        if args.compute_source_residues:
+                            scores[(P1, P2)]['P1_source_residue'].append(P1_nearest_res)
+                            scores[(P1, P2)]['P2_source_residue'].append(target_residue)
+                        scores[(P1, P2)]['P1_source_site'].append(P1_center)
+                        scores[(P1, P2)]['P2_source_site'].append(P2_center)
+                        scores[(P1, P2)]['P1_source_TMscore'].append(TMscore_P1)
+                        scores[(P1, P2)]['P2_source_TMscore'].append(TMscore_P2)
+                        scores[(P1, P2)]['P1_source_iface'].append(P1_all_feats['iface'][0][P1_center])
+                        scores[(P1, P2)]['P2_source_iface'].append(P2_all_feats['iface'][0][P2_center])
+                        scores[(P1, P2)]['MaSIF-score'].append(masif_score)
+                        scores[(P1, P2)]['flattened_transform'].append(flatten_transform(result.transformation))
+                        if args.count_clashes:
+                            scores[(P1, P2)]['ca_clash'].append(ca_clashes)
+                            scores[(P1, P2)]['heavy_atom_clash'].append(heavy_clashes)
 
                     total_matches += n_hits
                     log(f'Found {n_hits} matches to site {P2_center}')

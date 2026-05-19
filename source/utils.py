@@ -412,7 +412,96 @@ def multidock(
         all_source_desc.append(source_patch_descs)
         all_source_idx.append(source_patch_idx)
 
-    return all_results, all_source_patch, all_source_desc, all_source_idx 
+    return all_results, all_source_patch, all_source_desc, all_source_idx
+
+
+def apply_transform(coords, T):
+    """Apply a 4x4 homogeneous transform to Nx3 coordinates."""
+    coords = np.asarray(coords, dtype=float)
+    if coords.ndim == 1:
+        coords = coords.reshape(1, -1)
+    n = coords.shape[0]
+    coords_h = np.hstack([coords, np.ones((n, 1))])
+    return (np.asarray(T) @ coords_h.T).T[:, :3]
+
+
+def transform_patch_coords(pcd, patch_indices, site, T):
+    """Transform geodesic patch vertex coordinates for a surface site."""
+    pts = np.asarray(pcd.points)[patch_indices[site]]
+    return apply_transform(pts, T)
+
+
+def compute_descriptor_score(
+    P1_patch_coords,
+    P1_descs,
+    P1_indices,
+    P1_site,
+    P2_pcd,
+    P2_descs,
+    P2_indices,
+    P2_site,
+):
+    """
+    MaSIF descriptor match score for aligned P1 patch coordinates vs target patch.
+    Returns normalized score in [0, 1), or 0.0 when no neighbors within 5 A.
+    """
+    P2_patch_coords = np.asarray(P2_pcd.points)[P2_indices[P2_site]]
+
+    P2_patch_ckdtree = cKDTree(P2_patch_coords)
+    d_nn, r_nn = P2_patch_ckdtree.query(P1_patch_coords)
+    neigh = np.where(d_nn <= 5.0)[0]
+
+    if len(neigh) == 0:
+        return 0.0
+
+    P1_patch_desc = P1_descs[P1_indices[P1_site]]
+    P2_patch_desc = P2_descs[P2_indices[P2_site]]
+
+    desc_dist_score = np.sum(
+        np.square(
+            (1 / np.sqrt(np.sum(np.square(P1_patch_desc - P2_patch_desc[r_nn]), axis=1)))[neigh]
+        )
+    )
+    return float(np.tanh(desc_dist_score / 80))
+
+
+def get_filtered_target_structure(target_pdb_path, target_chain, cache):
+    """Parse target PDB once and cache chain-filtered structure for clash counting."""
+    chain_key = tuple(target_chain) if isinstance(target_chain, (list, tuple)) else (target_chain,)
+    key = (os.path.abspath(target_pdb_path), chain_key)
+    if key not in cache:
+        pdb_parser = PDBParser(QUIET=True)
+        target_structure = pdb_parser.get_structure('', target_pdb_path)
+        chains_to_remove = [
+            chain for chain in target_structure.get_chains()
+            if chain.id not in chain_key
+        ]
+        for chain in chains_to_remove:
+            target_structure[0].detach_child(chain.id)
+        cache[key] = target_structure
+    return cache[key]
+
+
+def compute_hit_clash_score(
+    P1_pdb,
+    target_structure,
+    descriptor_score,
+    ca_clash_threshold=1.0,
+    heavy_atom_clash_threshold=5.0,
+):
+    """
+    Count clashes for a transformed source PDB against a cached target structure.
+    Returns (ca_clashes, heavy_clashes, final_score).
+    final_score is 0.0 when clash thresholds are exceeded, else descriptor_score.
+    """
+    pdb_parser = PDBParser(QUIET=True)
+    source_structure = pdb_parser.get_structure('', P1_pdb)
+    ca_clashes, heavy_clashes = count_clashes(source_structure, target_structure, radius=2.0)
+    final_score = descriptor_score
+    if ca_clashes > ca_clash_threshold or heavy_clashes > heavy_atom_clash_threshold:
+        final_score = 0.0
+    return ca_clashes, heavy_clashes, final_score
+
 
 def compute_score_and_clashes(
     P1_pdb, P1_pcd, P1_descs, P1_site, P1_indices, 
@@ -443,41 +532,27 @@ def compute_score_and_clashes(
     '''
     
     P1_patch_coords = np.array(P1_pcd.points)[P1_indices[P1_site]]
-    P2_patch_coords = np.array(P2_pcd.points)[P2_indices[P2_site]]
-
-    P2_patch_ckdtree = cKDTree(P2_patch_coords)
-    d_nn, r_nn = P2_patch_ckdtree.query(P1_patch_coords)
-    neigh = np.where(d_nn <= 5.0)[0]
-
-    if len(neigh) == 0:
-        return [[np.inf, np.inf], 0.0], None
-
-    P1_patch_desc = P1_descs[P1_indices[P1_site]]
-    P2_patch_desc = P2_descs[P2_indices[P2_site]]
-
-    desc_dist_score = np.sum(np.square((1 / np.sqrt(np.sum(np.square(P1_patch_desc - P2_patch_desc[r_nn]), axis=1)))[neigh]))
-    normalized_desc_dist_score = np.tanh(desc_dist_score/80)
+    normalized_desc_dist_score = compute_descriptor_score(
+        P1_patch_coords, P1_descs, P1_indices, P1_site,
+        P2_pcd, P2_descs, P2_indices, P2_site,
+    )
     output = [[0, 0], normalized_desc_dist_score]
     
     if compute_clashes:
-        pdb_parser = PDBParser(QUIET=True)
         assert 'target_structure' in kwargs, 'Please provide target_structure for clash counting.'
         assert 'target_chain' in kwargs, 'Please provide target_chain for clash counting.'
-        source_structure = pdb_parser.get_structure('', P1_pdb) # NOTE: P1_pdb is already transformed
-        target_structure = pdb_parser.get_structure('', kwargs['target_structure'])
-        target_chain = list(kwargs['target_chain'])
-        
-        chains_to_remove = []
-        for chain in target_structure.get_chains():
-            if chain.id not in target_chain:
-                chains_to_remove.append(chain)
-        
-        for chain in chains_to_remove:
-            target_structure[0].detach_child(chain.id)
-
-        output[0][0], output[0][1] = count_clashes(source_structure, target_structure, radius=2.0)
-        if output[0][0] > kwargs.get('ca_clash_threshold', 1.0) or output[0][1] > kwargs.get('heavy_atom_clash_threshold', 5.0):
-            output[1] = 0.0
+        target_structure = get_filtered_target_structure(
+            kwargs['target_structure'], kwargs['target_chain'], kwargs.get('_target_cache', {}),
+        )
+        ca_clashes, heavy_clashes, final_score = compute_hit_clash_score(
+            P1_pdb,
+            target_structure,
+            normalized_desc_dist_score,
+            ca_clash_threshold=kwargs.get('ca_clash_threshold', 1.0),
+            heavy_atom_clash_threshold=kwargs.get('heavy_atom_clash_threshold', 5.0),
+        )
+        output[0][0], output[0][1] = ca_clashes, heavy_clashes
+        output[1] = final_score
         return output, target_structure
     else:
         return output, None

@@ -2,12 +2,7 @@ from pathlib import Path
 import numpy as np
 from Bio.PDB import PDBParser
 
-if __name__ == "__main__":
-    import sys
-    basedir = Path(__file__).resolve().parent.parent.parent
-    sys.path.append(str(basedir))
-
-from utils import resolve_database_paths
+from masif_mimicry.config.paths import resolve_database_paths
 
 
 def pairwise_distances(coord1, coord2):

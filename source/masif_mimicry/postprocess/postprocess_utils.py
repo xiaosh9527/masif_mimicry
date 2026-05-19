@@ -12,13 +12,9 @@ from Bio.SVDSuperimposer import SVDSuperimposer
 from sklearn.cluster import DBSCAN
 from tqdm import tqdm
 
-from postprocess.metrics.secondary_structure import find_sse
-
-import sys
-if __name__ == "__main__":
-    basedir = Path(__file__).resolve().parent.parent
-    sys.path.append(str(basedir))
-from utils import resolve_database_paths
+from masif_mimicry.config.paths import resolve_database_paths
+from masif_mimicry.postprocess.metrics.secondary_structure import find_sse
+from masif_mimicry.structure.transforms import get_transformed_struct_from_row
 
 # 20 standard amino acid three-letter codes
 STANDARD_AA = frozenset({
@@ -79,7 +75,6 @@ def get_descriptor(row, database_dir, flipped=False):
 def get_transformed_struct(row, database_dir):
     """Apply flattened_transform to a domainome PDB (legacy matched_protein rows)."""
     if hasattr(row, "P1_id") and hasattr(row, "flattened_transform"):
-        from utils import get_transformed_struct_from_row
         return get_transformed_struct_from_row(row, database_dir)
 
     _, db_prep = resolve_database_paths(database_dir)

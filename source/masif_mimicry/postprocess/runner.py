@@ -1,5 +1,4 @@
 import os
-import sys
 import tempfile
 import warnings
 from pathlib import Path
@@ -9,37 +8,15 @@ import pandas as pd
 from Bio.PDB import PDBIO
 from tqdm import tqdm
 
-if __name__ == "__main__":
-    basedir = Path(__file__).resolve().parent.parent
-    sys.path.append(str(basedir))
-
-from utils import get_transformed_struct_from_row, resolve_database_paths
-from postprocess.postprocess_utils import maybe_load_structure
-from postprocess.metrics.clashes import count_clashes
-from postprocess.metrics.sasa import compute_sasa_values
-from postprocess.metrics.interface import compute_binder_interface_metrics
-
-
-"""
-Process mimicry search outputs: discover per-seed CSVs under --target_run_dir,
-deduplicate to one row per P1, and compute post-processing metrics.
-
-Command-line usage:
-    python process_search_outputs_mimicry.py \\
-        --target_run_dir /path/to/021structure_C_AB_ \\
-        --target_pdb /path/to/021structure_C.pdb \\
-        --database_dir /path/to/TED_domainome/output \\
-        --target_preprocess_dir /path/to/NUP98 \\
-        --ligand A_021 \\
-        -o output.csv \\
-        [--subset subset_ids.txt]
-"""
+from masif_mimicry.structure.transforms import get_transformed_struct_from_row
+from masif_mimicry.postprocess.postprocess_utils import maybe_load_structure
+from masif_mimicry.postprocess.metrics.clashes import count_clashes
+from masif_mimicry.postprocess.metrics.sasa import compute_sasa_values
+from masif_mimicry.postprocess.metrics.interface import compute_binder_interface_metrics
 
 
 def parse_ligand_def(ligand_def: str) -> dict:
-    """
-    Parse --ligand CHAIN_RESNAME (e.g. A_021 -> chain A, hetero resname 021).
-    """
+    """Parse --ligand CHAIN_RESNAME (e.g. A_021 -> chain A, hetero resname 021)."""
     if "_" not in ligand_def:
         raise ValueError(f"--ligand must be CHAIN_RESNAME, got {ligand_def!r}")
     chain, resname = ligand_def.split("_", 1)
@@ -263,64 +240,3 @@ def process_results_mimicry(
     if out_csv_file is not None:
         return None
     return pd.DataFrame(results)
-
-
-if __name__ == "__main__":
-    from argparse import ArgumentParser
-
-    parser = ArgumentParser(description="Post-process mimicry search CSV outputs")
-    parser.add_argument(
-        "--target_run_dir",
-        type=Path,
-        required=True,
-        help="Search run directory containing per-P1 subfolders and CSVs",
-    )
-    parser.add_argument(
-        "--target_pdb",
-        type=Path,
-        required=True,
-        help="Path to target chain-C PDB (e.g. 021structure_C.pdb)",
-    )
-    parser.add_argument(
-        "--database_dir",
-        type=Path,
-        required=True,
-        help="MaSIF database root (e.g. TED_domainome/output); PDBs under data_preparation/01-benchmark_pdbs/",
-    )
-    parser.add_argument(
-        "--target_preprocess_dir",
-        type=Path,
-        required=True,
-        help="MaSIF preprocess directory for the target (e.g. data/NUP98)",
-    )
-    parser.add_argument("-o", "--out_csv_file", type=Path, required=True, help="Combined output CSV")
-    parser.add_argument("--subset", type=Path, default=None, help="Optional P1_id list (one per line)")
-    parser.add_argument("--ligand", type=str, required=True, help="Ligand name and chain, e.g. 'A_021'")
-
-    args = parser.parse_args()
-
-    database_dir = os.path.abspath(os.path.expanduser(args.database_dir))
-    _, db_prep = resolve_database_paths(database_dir)
-    if not os.path.isdir(db_prep):
-        print(f"Error: data_preparation directory not found: {db_prep}", file=sys.stderr)
-        sys.exit(1)
-
-    df = discover_deduplicated_rows(args.target_run_dir)
-    if df.empty:
-        print("No hits to post-process.", flush=True)
-        sys.exit(0)
-
-    if args.subset is not None:
-        with open(args.subset) as f:
-            subset_list = {line.strip() for line in f if line.strip()}
-        df = df[df["P1_id"].isin(subset_list)]
-
-    process_results_mimicry(
-        df,
-        target_pdb=args.target_pdb,
-        database_dir=database_dir,
-        target_preprocess_dir=args.target_preprocess_dir,
-        ligand_def=args.ligand,
-        out_csv_file=args.out_csv_file,
-    )
-    print(f"Results written to {args.out_csv_file}")

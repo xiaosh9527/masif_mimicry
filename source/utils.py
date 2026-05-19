@@ -17,57 +17,7 @@ elif version.parse('0.6.0') < version.parse(o3d.__version__):
 else:
     ICPConvergenceCriteria = o3d.ICPConvergenceCriteria
 
-BENCHMARK_PDB_SUBDIR = "01-benchmark_pdbs"
-BENCHMARK_SURF_SUBDIR = "01-benchmark_surfaces"
-PRECOMP_12A_SUBDIR = "04b-precomputation_12A/precomputation"
-PRECOMP_9A_SUBDIR = "04a-precomputation_9A/precomputation"
-
-
-def resolve_database_paths(database_dir: str):
-    """
-    Resolve MaSIF database root and data_preparation directory.
-
-    database_dir may be either the database root (e.g. TED .../output) or
-    .../output/data_preparation directly.
-    """
-    database_dir = os.path.normpath(database_dir)
-    if os.path.basename(database_dir) == "data_preparation":
-        return os.path.dirname(database_dir), database_dir
-    return database_dir, os.path.join(database_dir, "data_preparation")
-
-
-def set_params(*, database_dir: str, target_preprocess_dir: str, masif_app: str = "ppi_search") -> dict:
-    '''
-    Set the parameters for the mimicry search.
-    '''
-    params = {}
-    db_root, db_prep = resolve_database_paths(database_dir)
-    params["database_root"] = db_root
-    params["database_preparation_dir"] = db_prep
-    # Legacy alias used by structural clustering and path helpers.
-    params["top_seed_dir"] = db_prep
-    params["masif_target_root"] = os.path.normpath(target_preprocess_dir)
-    params["out_dir_template"] = "tmp/{}/"
-
-    # Seed locations (under data_preparation/)
-    params["seed_surf_dir"] = os.path.join(db_prep, BENCHMARK_SURF_SUBDIR)
-    params["seed_pdb_dir"] = os.path.join(db_prep, BENCHMARK_PDB_SUBDIR)
-    params["seed_precomp_dir"] = os.path.join(db_prep, PRECOMP_12A_SUBDIR)
-    params["seed_iface_dir"] = os.path.join(db_root, masif_opts["site"]["out_pred_dir"])
-    params["seed_ply_iface_dir"] = os.path.join(db_root, masif_opts["site"]["out_surf_dir"])
-    params["seed_desc_dir"] = os.path.join(db_root, masif_opts["ppi_search"]["desc_dir"])
-
-    # Target locations (full MaSIF preprocess tree for the target)
-    params["target_surf_dir"] = os.path.join(params["masif_target_root"], masif_opts["ply_chain_dir"])
-    params["target_iface_dir"] = os.path.join(params["masif_target_root"], masif_opts["site"]["out_pred_dir"])
-    params["target_ply_iface_dir"] = os.path.join(params["masif_target_root"], masif_opts["site"]["out_surf_dir"])
-    params["target_pdb_dir"] = os.path.join(params["masif_target_root"], masif_opts["pdb_chain_dir"])
-    params["target_desc_dir"] = os.path.join(params["masif_target_root"], masif_opts["ppi_search"]["desc_dir"])
-    params["target_precomp_dir"] = os.path.join(
-        params["masif_target_root"], masif_opts[masif_app]["masif_precomputation_dir"]
-    )
-
-    return params
+from masif_mimicry.structure.transforms import apply_transform, get_transformed_struct_from_row
 
 def get_features(params: dict, pdb: str, pid: str, source: bool = True, flip_desc: bool = False) -> dict:
     '''
@@ -524,16 +474,6 @@ def multidock(
     return all_results, all_source_patch, all_source_desc, all_source_idx
 
 
-def apply_transform(coords, T):
-    """Apply a 4x4 homogeneous transform to Nx3 coordinates."""
-    coords = np.asarray(coords, dtype=float)
-    if coords.ndim == 1:
-        coords = coords.reshape(1, -1)
-    n = coords.shape[0]
-    coords_h = np.hstack([coords, np.ones((n, 1))])
-    return (np.asarray(T) @ coords_h.T).T[:, :3]
-
-
 def transform_patch_coords(pcd, patch_indices, site, T):
     """Transform geodesic patch vertex coordinates for a surface site."""
     pts = np.asarray(pcd.points)[patch_indices[site]]
@@ -747,51 +687,6 @@ def count_clashes(
     
     return clashing_ca, clashing
 
-def transform_structure(input_path, T, output_path=None):
-    '''
-    Transform the 3D structure by applying a transformation matrix T.
-    
-    input_path: Path to the input PDB file.
-    T: 4x4 transformation matrix.
-    output_path: Path to save the transformed PDB file. If None, the file is not saved.
-    
-    Returns the transformed structure as a Bio.PDB Structure object.
-    '''
-    pdb_parser = PDBParser(QUIET=True)
-    structure = pdb_parser.get_structure('', input_path)
-    P_atoms = [atom for atom in structure.get_atoms() if not atom.get_name().startswith('H')]
-    P_coords = np.array([atom.get_coord() for atom in P_atoms])
-    P_coords_pcd = PointCloud()
-    P_coords_pcd.points = Vector3dVector(P_coords)
-    P_coords_pcd.transform(T)
-    for ix, v in enumerate(P_coords_pcd.points):
-        P_atoms[ix].set_coord(v)
-
-    if output_path is not None:
-        io = PDBIO()
-        for atom in Selection.unfold_entities(structure, 'A'):
-            if atom.get_name().startswith('H'):
-                parent = atom.get_parent()
-                parent.detach_child(atom.get_id())
-        io.set_structure(structure)
-        io.save(output_path)
-
-    return structure
-
-
-def seed_pdb_path(p1_id, database_dir):
-    """Resolve preprocessed seed PDB under database_dir/01-benchmark_pdbs/."""
-    _, db_prep = resolve_database_paths(database_dir)
-    return os.path.join(db_prep, BENCHMARK_PDB_SUBDIR, f"{p1_id}.pdb")
-
-
-def get_transformed_struct_from_row(row, database_dir):
-    """Apply flattened_transform to the seed PDB using mimicry/Open3D conventions."""
-    pdb_path = seed_pdb_path(row.P1_id, database_dir)
-    T = np.array(list(map(float, row.flattened_transform.split(",")))).reshape(4, 4)
-    return transform_structure(pdb_path, T, output_path=None)
-
-
 def _backbone_coords(struct, atoms_to_keep=("N", "CA", "C")):
     coords = []
     for atom in struct.get_atoms():
@@ -902,4 +797,48 @@ def structural_clusters(df, rmsd_thresh=5.0, database_dir=None, database_root=No
         current_cluster_label += 1
 
     return df
+
+
+# --- Backward-compatible re-exports (deprecated; use masif_mimicry.*) ---
+import warnings
+
+
+def _deprecated_import(name, module):
+    warnings.warn(
+        f"utils.{name} is deprecated; import from masif_mimicry.{module}",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+
+
+def resolve_database_paths(database_dir: str):
+    _deprecated_import("resolve_database_paths", "config.paths")
+    from masif_mimicry.config.paths import resolve_database_paths as _fn
+    return _fn(database_dir)
+
+
+def set_params(*, database_dir: str, target_preprocess_dir: str, masif_app: str = "ppi_search") -> dict:
+    _deprecated_import("set_params", "config.paths")
+    from masif_mimicry.config.paths import set_params as _fn
+    return _fn(database_dir=database_dir, target_preprocess_dir=target_preprocess_dir, masif_app=masif_app)
+
+
+def transform_structure(input_path, T, output_path=None):
+    _deprecated_import("transform_structure", "structure.transforms")
+    from masif_mimicry.structure.transforms import transform_structure as _fn
+    return _fn(input_path, T, output_path=output_path)
+
+
+def seed_pdb_path(p1_id, database_dir):
+    _deprecated_import("seed_pdb_path", "structure.transforms")
+    from masif_mimicry.structure.transforms import seed_pdb_path as _fn
+    return _fn(p1_id, database_dir)
+
+
+from masif_mimicry.config.paths import (  # noqa: E402
+    BENCHMARK_PDB_SUBDIR,
+    BENCHMARK_SURF_SUBDIR,
+    PRECOMP_12A_SUBDIR,
+    PRECOMP_9A_SUBDIR,
+)
 

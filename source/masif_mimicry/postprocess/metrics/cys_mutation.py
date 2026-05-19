@@ -1,7 +1,7 @@
 import numpy as np
 
-from postprocess.postprocess_utils import maybe_load_structure
-from postprocess.metrics.sasa import extract_ligand_residue
+from masif_mimicry.postprocess.postprocess_utils import maybe_load_structure
+from masif_mimicry.postprocess.metrics.sasa import extract_ligand_residue
 
 
 def find_closest_c_beta(query, target_pdb):

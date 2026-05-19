@@ -14,7 +14,8 @@ PIPELINE_DIR="${MIMICRY_PIPELINE_DIR:-${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BAS
 # shellcheck source=mimicry_pipeline.config.sh
 source "${PIPELINE_DIR}/mimicry_pipeline.config.sh"
 
-export PYTHONPATH="${PYTHONPATH:+$PYTHONPATH:}${MASIF_DB_SOURCE}:${MASIF_SEED_SOURCE}:${MASIF_MIMICRY_SOURCE}"
+export PYTHONPATH="${MASIF_MIMICRY_SOURCE}${PYTHONPATH:+:${PYTHONPATH}}"
+export PYTHONPATH="${MASIF_DB_SOURCE}:${PYTHONPATH}"
 
 mkdir -p "${MASIF_MIMICRY_ROOT}/logs"
 cd "${MASIF_MIMICRY_ROOT}"
@@ -33,7 +34,7 @@ fi
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate MaSIF
 
-python -u "${MASIF_MIMICRY_SOURCE}/postprocess/postprocess_mimicry.py" \
+python -u -m masif_mimicry.cli.postprocess \
   --target_run_dir "${TARGET_RUN_DIR}" \
   --target_pdb "${POSTPROCESS_TARGET_PDB}" \
   --database_dir "${DATABASE_DIR}" \

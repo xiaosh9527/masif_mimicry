@@ -1,3 +1,4 @@
+import json
 import os
 import numpy as np
 import open3d as o3d
@@ -231,6 +232,91 @@ def select_target_sites_by_radius_fps(
     seed_local = int(np.argmin(min_dists[candidates]))
     local_selected = farthest_point_subsample(candidate_coords, num_points, seed_idx=seed_local)
     return np.sort(candidates[local_selected])
+
+
+TARGET_SITES_MANIFEST = "target_sites.json"
+
+
+def write_target_vert_files(p2_all_feats, selected_points_idx, target_ppi_id, output_dir, outward_shift=0.25):
+    """Write full geodesic patch vertices for each selected target site."""
+    vert_dir = os.path.join(output_dir, "target_vert")
+    os.makedirs(vert_dir, exist_ok=True)
+    pcd_points = np.asarray(p2_all_feats["pcd"].points)
+    centers_path = os.path.join(vert_dir, "target.vert")
+    with open(centers_path, "w") as out_centers:
+        for site_vix in selected_points_idx:
+            center = pcd_points[site_vix]
+            out_centers.write("{}, {}, {}\n".format(center[0], center[1], center[2]))
+            target_patch, _, _ = get_patch_geo(
+                p2_all_feats["pcd"],
+                p2_all_feats["indices"],
+                site_vix,
+                p2_all_feats["desc"],
+                flip_normals=False,
+                outward_shift=outward_shift,
+            )
+            vert_path = os.path.join(vert_dir, f"{target_ppi_id}_{site_vix}.vert")
+            with open(vert_path, "w") as out_patch:
+                for point in target_patch.points:
+                    out_patch.write("{}, {}, {}\n".format(point[0], point[1], point[2]))
+    print(
+        f"Wrote {len(selected_points_idx)} patch files and {centers_path} to {vert_dir}",
+        flush=True,
+    )
+
+
+def write_target_sites_manifest(target_run_dir, manifest):
+    """Write target_sites.json under target_run_dir."""
+    path = os.path.join(target_run_dir, TARGET_SITES_MANIFEST)
+    with open(path, "w") as f:
+        json.dump(manifest, f, indent=2)
+        f.write("\n")
+    return path
+
+
+def load_target_run_manifest(target_run_dir):
+    """
+    Load and validate a prepared target run directory.
+    Returns (manifest dict, sites as int ndarray).
+    """
+    target_run_dir = os.path.abspath(os.path.expanduser(target_run_dir))
+    manifest_path = os.path.join(target_run_dir, TARGET_SITES_MANIFEST)
+    if not os.path.isfile(manifest_path):
+        raise FileNotFoundError(
+            f"Missing {TARGET_SITES_MANIFEST} in {target_run_dir}. "
+            "Run define_target_sites.py first."
+        )
+    with open(manifest_path) as f:
+        manifest = json.load(f)
+    vert_dir = os.path.join(target_run_dir, "target_vert")
+    if not os.path.isdir(vert_dir):
+        raise FileNotFoundError(
+            f"Missing target_vert/ in {target_run_dir}. "
+            "Run define_target_sites.py first."
+        )
+    sites = [int(x) for x in manifest["sites"]]
+    if len(sites) == 0:
+        raise ValueError(f"No target sites listed in {manifest_path}")
+    return manifest, np.array(sites, dtype=int)
+
+
+def write_partner_pdb_for_clashes(params, target_pdb, target_ppi_id, target_run_dir):
+    """Write chain-filtered partner PDB once for downstream clash counting."""
+    P2_raw_pdb = os.path.join(
+        params["masif_target_root"],
+        "data_preparation",
+        "00-raw_pdbs",
+        f"{target_pdb.split('_')[0]}.pdb",
+    )
+    partner_chain_ids = parse_partner_chain_ids(target_pdb, target_ppi_id)
+    partner_suffix = "".join(partner_chain_ids)
+    partner_filename = f"{target_pdb.split('_')[0]}_{partner_suffix}.pdb"
+    partner_path = os.path.join(target_run_dir, partner_filename)
+    filtered = get_filtered_target_structure(P2_raw_pdb, partner_chain_ids, {})
+    io = PDBIO()
+    io.set_structure(filtered)
+    io.save(partner_path)
+    return partner_filename, partner_path
 
 
 def res2surf(point_coords: np.ndarray, pdb_path: str, chain: str, residue: int, atom_name: str, k: int = 1) -> np.ndarray:

@@ -43,7 +43,10 @@ def create_parser():
     p.add_argument("--output_postfix", type=str, default='', help="Subfolder postfix for outputs")
     p.add_argument("--count_clashes", action='store_true', help="Compute clashes (slower)")
     p.add_argument("--ca_clash_threshold", type=float, default=100, help="CA clash threshold")
-    p.add_argument("--heavy_atom_clash_threshold", type=float, default=100, help="Heavy-atom clash threshold")    
+    p.add_argument("--heavy_atom_clash_threshold", type=float, default=100, help="Heavy-atom clash threshold")
+    p.add_argument("--compute_source_residues", action='store_true',
+                   help="Map patch centers to nearest surface-exposed residues via surf2atom (DSSP; slower). "
+                        "Adds P1_source_residue and P2_source_residue columns to output CSV.")
 
     return p
 
@@ -165,8 +168,6 @@ def main(args):
             'P2_id': [],
             'P1_source_ppi_id': [],
             'P2_source_ppi_id': [],
-            'P1_source_residue': [],
-            'P2_source_residue': [],
             'P1_source_site': [],
             'P2_source_site': [],
             'P1_source_TMscore': [],
@@ -176,6 +177,9 @@ def main(args):
             'MaSIF-score': [],
             'flattened_transform': [],
         }
+        if args.compute_source_residues:
+            scores[(P1, P2)]['P1_source_residue'] = []
+            scores[(P1, P2)]['P2_source_residue'] = []
         if args.count_clashes:
             scores[(P1, P2)]['ca_clash'] = []
             scores[(P1, P2)]['heavy_atom_clash'] = []
@@ -228,13 +232,6 @@ def main(args):
                     sites_aligned += 1
                     n_hits = 0
 
-                    target_atom, _ = surf2atom(
-                        point_coords = np.array(P2_all_feats['pcd'].points)[P2_center].reshape(1,-1),
-                        pdb_path = P2_all_feats['pdb'],
-                    )
-                    
-                    target_residue = target_atom[0].get_parent().get_id()[1]
-
                     all_results, _, _, _ = multidock(
                         source_pt=P1_selected_points_idx_final,
                         source_pcd=P1_all_feats['pcd'], source_patch_idxs=P1_all_feats['indices'], source_descs=P1_all_feats['desc'], 
@@ -278,14 +275,18 @@ def main(args):
                             shutil.move(os.path.join(local_tmp_dir, f'{out_filename_base}.pdb'), os.path.join(output_root, f'{out_filename_base}.pdb'))
                             # P1_raw_pdb = os.path.join(params['top_seed_dir'], 'data_preparation', '00-raw_pdbs', f'{P1.split("_")[0]}.pdb')
                             # _ = transform_structure(P1_raw_pdb, result.transformation, os.path.join(output_root, f'{P1.split("_")[0]}.pdb'))
-                            
-                            # NOTE: Find the nearest residue on P1 to the center point
-                            P1_nearest_atom, _ = surf2atom(
-                                point_coords = np.array(P1_pcd.points)[P1_center].reshape(1,-1), 
-                                pdb_path = os.path.join(output_root, f'{out_filename_base}.pdb'), 
-                            )
 
-                            P1_nearest_res = P1_nearest_atom[0].get_parent().get_id()[1]
+                            if args.compute_source_residues:
+                                target_atom, _ = surf2atom(
+                                    point_coords=np.array(P2_all_feats['pcd'].points)[P2_center].reshape(1, -1),
+                                    pdb_path=P2_all_feats['pdb'],
+                                )
+                                target_residue = target_atom[0].get_parent().get_id()[1]
+                                P1_nearest_atom, _ = surf2atom(
+                                    point_coords=np.array(P1_pcd.points)[P1_center].reshape(1, -1),
+                                    pdb_path=os.path.join(output_root, f'{out_filename_base}.pdb'),
+                                )
+                                P1_nearest_res = P1_nearest_atom[0].get_parent().get_id()[1]
 
                             # Compute TMscore using USalign
                             process = Popen(["/install/USalign/USalign", P1_all_feats['pdb'], P2_all_feats['pdb'], '-mm', '0', '-ter', '2'], stdout=PIPE, stderr=PIPE)
@@ -298,8 +299,9 @@ def main(args):
                             scores[(P1, P2)]['P2_id'].append(P2)
                             scores[(P1, P2)]['P1_source_ppi_id'].append(ppi_id)
                             scores[(P1, P2)]['P2_source_ppi_id'].append(args.target_ppi_id)
-                            scores[(P1, P2)]['P1_source_residue'].append(P1_nearest_res)
-                            scores[(P1, P2)]['P2_source_residue'].append(target_residue)
+                            if args.compute_source_residues:
+                                scores[(P1, P2)]['P1_source_residue'].append(P1_nearest_res)
+                                scores[(P1, P2)]['P2_source_residue'].append(target_residue)
                             scores[(P1, P2)]['P1_source_site'].append(P1_center)
                             scores[(P1, P2)]['P2_source_site'].append(P2_center)
                             scores[(P1, P2)]['P1_source_TMscore'].append(TMscore_P1)

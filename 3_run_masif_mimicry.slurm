@@ -40,3 +40,5 @@ apptainer exec \
     --desc_dist_cutoff "${DESC_DIST_CUTOFF}" \
     --desc_dist_score_cutoff "${DESC_DIST_SCORE_CUTOFF}" \
     --split_seed_list "${DATABASE_SUBSET_DIR}/${SLURM_ARRAY_TASK_ID}"
+
+echo "Mimicry search completed."

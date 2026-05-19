@@ -7,6 +7,12 @@ MASIF_ROOT="/scratch/ymeng/masif_seed"
 MASIF_MIMICRY_ROOT="${MASIF_ROOT}/masif_mimicry"
 IMAGE="${MASIF_MIMICRY_ROOT}/masif_mimicry.sif"
 
+# Which pipeline steps to submit (true/false; used by submit_mimicry_pipeline.sh)
+RUN_PREPROCESS=false
+RUN_TARGET_SITES=false
+RUN_MIMICRY_SEARCH=true
+
+
 # --- Step 1: preprocess target PDB ---
 PDB_INPUT="input/021structure.pdb"
 PDB_CHAIN="021structure_C_AB"   # p1: chain C; p2: chains A and B

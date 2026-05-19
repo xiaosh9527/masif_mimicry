@@ -35,7 +35,7 @@ TARGET_RUN_DIR_REL="data/NUP98/search_results/021structure_C_AB_"
 # --- Step 3: mimicry search ---
 DATABASE_DIR="/scratch/ymeng/TED_domainome/output"
 DATABASE_SUBSET_DIR="/scratch/ymeng/TED_domainome/output/filtered_intracellular_domainome/subsets"
-SEARCH_ARRAY="2-4"
+SEARCH_ARRAY="6-10"
 
 # Desc/dist thresholds (search)
 DESC_DIST_CUTOFF=2.0
@@ -44,7 +44,7 @@ CA_CLASH_THRESHOLD=1.0
 HEAVY_ATOM_CLASH_THRESHOLD=5.0
 
 # --- Step 4: post-process search hits (conda env MaSIF; not Apptainer) ---
-# POSTPROCESS_TARGET_PDB: chain-C target for clashes/SASA (written by define_target_sites.py)
+# POSTPROCESS_TARGET_PDB: chain-C target for clashes/SASA (written by masif_mimicry.define_target_sites)
 POSTPROCESS_TARGET_PDB="/scratch/ymeng/masif_seed/masif_mimicry/data/NUP98/search_results/021structure_C_AB_/021structure_AB.pdb"
 POSTPROCESS_OUT_DIR="/scratch/ymeng/masif_seed/masif_mimicry/data/NUP98/search_results/postprocess"
 POSTPROCESS_CSV_BASE="subset"

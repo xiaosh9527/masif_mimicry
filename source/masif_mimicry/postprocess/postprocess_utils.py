@@ -9,51 +9,15 @@ from Bio.PDB import PDBParser, PDBIO
 from Bio.PDB.Structure import Structure
 from Bio.PDB.StructureBuilder import StructureBuilder
 from Bio.SVDSuperimposer import SVDSuperimposer
-from sklearn.cluster import DBSCAN
-from tqdm import tqdm
 
 from masif_mimicry.config.paths import resolve_database_paths
 from masif_mimicry.postprocess.metrics.secondary_structure import find_sse
-from masif_mimicry.structure.transforms import get_transformed_struct_from_row
-
-# 20 standard amino acid three-letter codes
-STANDARD_AA = frozenset({
-    "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY",
-    "HIS", "ILE", "LEU", "LYS", "MET", "PHE", "PRO", "SER",
-    "THR", "TRP", "TYR", "VAL",
-})
-
-
-def filter_structure_to_standard_aa(struct, standard_aa=None):
-    """
-    Return a new Structure with only standard amino acid residues.
-    Preserves chain IDs and residue numbering.
-    """
-    if standard_aa is None:
-        standard_aa = STANDARD_AA
-
-    model = struct[0] if isinstance(struct, Structure) else struct
-    builder = StructureBuilder()
-    builder.init_structure('filtered')
-    builder.init_model(0)
-
-    for chain in model.get_chains():
-        builder.init_chain(chain.id)
-
-    out_struct = builder.get_structure()
-    out_model = out_struct[0]
-
-    for chain in model.get_chains():
-        chain_id = chain.id
-        for res in chain.get_residues():
-            if res.get_resname() in standard_aa:
-                out_model[chain_id].add(res.copy())
-
-    return out_struct
-
-
-def maybe_load_structure(path_or_structure: Union[str, Path, Structure]):
-    return path_or_structure if isinstance(path_or_structure, Structure) else PDBParser(QUIET=True).get_structure('', str(path_or_structure))
+from masif_mimicry.postprocess.structures import (
+    STANDARD_AA,
+    filter_structure_to_standard_aa,
+    maybe_load_structure,
+)
+from masif_mimicry.utils.transforms import get_transformed_struct_from_row
 
 
 def _descriptor_root(database_dir):
@@ -156,66 +120,6 @@ class GLoopMatcher:
             rmsd_vals.append(sup.get_rms())
 
         return min(rmsd_vals) if len(rmsd_vals) > 0 else None
-
-
-def structural_clusters(df, database_dir, rmsd_thresh=5.0):
-    """
-    Clusters domains according to their binding mode (RMSD-based).
-    Adds the following new columns to the input dataframe:
-    - cluster_id: unique cluster id
-    - cluster_size: number members in the same cluster
-    - cluster_mean_rmsd: mean RMSD to all other cluster members
-    """
-
-    def get_coords(struct, atoms_to_keep=['N', 'CA', 'C']):
-        return np.stack([a.get_coord() for a in struct.get_atoms() if a.name in atoms_to_keep])
-
-
-    def rmsd(coords1, coords2):
-        assert coords1.shape == coords2.shape
-        diff = coords1 - coords2
-        return np.sqrt(np.mean(np.sum(diff * diff, axis=-1)))
-
-
-    current_cluster_label = 0
-    # for domain_name in ['Q5IJ48-F1-dom-01_A']:
-    for domain_name in tqdm(df.matched_protein.unique()):
-
-        domain_table = df[df.matched_protein == domain_name]
-
-        if len(domain_table) == 1:
-            df.loc[domain_table.index, 'cluster_id'] = current_cluster_label
-            df.loc[domain_table.index, 'cluster_size'] = 1
-            df.loc[domain_table.index, 'cluster_mean_rmsd'] = 0.0
-            current_cluster_label += 1
-            continue
-
-        positions = [
-            get_coords(get_transformed_struct(row, database_dir))
-            for i, row in domain_table.iterrows()
-        ]
-
-        rmsd_vals = np.zeros((len(domain_table), len(domain_table)))
-        for i in range(len(domain_table)):
-            for j in range(i + 1, len(domain_table)):
-                rmsd_ij = rmsd(positions[i], positions[j])
-                rmsd_vals[i, j] = rmsd_ij
-                rmsd_vals[j, i] = rmsd_ij
-
-        # DBSCAN clustering
-        labels = DBSCAN(eps=rmsd_thresh, min_samples=2, metric='precomputed').fit_predict(rmsd_vals)
-
-        # Create new clusters for outliers
-        labels[labels == -1] = np.arange((labels == -1).sum()) + labels.max() + 1
-
-        for lb in set(labels):
-            cluster_table = domain_table.iloc[labels == lb]
-            df.loc[cluster_table.index, 'cluster_id'] = current_cluster_label
-            df.loc[cluster_table.index, 'cluster_size'] = len(cluster_table)
-            df.loc[cluster_table.index, 'cluster_mean_rmsd'] = rmsd_vals[labels == lb][:, labels == lb].mean(axis=1)
-            current_cluster_label += 1
-
-    return df
 
 
 # def get_location_masks(row):

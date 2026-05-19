@@ -1,74 +1,33 @@
-import os, sys, argparse, shutil, tempfile
+import os
+import shutil
+import sys
+import tempfile
+from subprocess import PIPE, Popen
+
 import numpy as np
 import pandas as pd
+from Bio.PDB import PDBIO, PDBParser
 
-from utils import *
-from subprocess import Popen, PIPE
+from masif_mimicry.config.paths import set_params
+from masif_mimicry.search.docking import multidock, select_patches, transform_patch_coords
+from masif_mimicry.search.features import get_features
+from masif_mimicry.search.scoring import compute_descriptor_score, compute_hit_clash_score
+from masif_mimicry.search.target_sites import (
+    load_target_run_manifest,
+    select_target_sites_by_radius_fps,
+    surf2atom,
+    write_target_vert_files,
+)
+from masif_mimicry.utils.clustering import structural_clusters
+from masif_mimicry.utils.parse_structures import get_filtered_target_structure, parse_partner_chain_ids
+from masif_mimicry.utils.transforms import apply_transform, transform_structure
 
-# Target-site sampling flags (use define_target_sites.py when --target_run_dir is set).
 TARGET_SITE_ARG_NAMES = (
     "target_residue",
     "target_atom",
     "target_sampling_radius",
     "num_points",
 )
-
-
-def create_parser():
-    p = argparse.ArgumentParser("Simplified MaSIF mimicry search")
-
-    p.add_argument("--database_dir", type=str, required=True,
-                   help="MaSIF database root (e.g. TED_domainome/output); "
-                        "seed PDBs live under data_preparation/01-benchmark_pdbs/")
-    p.add_argument("--target_preprocess_dir", type=str, required=True,
-                   help="MaSIF target preprocess directory (same layout for the target protein)")
-
-    group = p.add_mutually_exclusive_group(required=True)
-    group.add_argument("--seed_pdb", type=str, help="Single seed PDB (format: PDB_ppi_chain or PDB_ppi)")
-    group.add_argument("--split_seed_list", type=str, help="File containing one seed PDB id per line")
-
-    p.add_argument(
-        "--target_run_dir",
-        type=str,
-        default=None,
-        help="Prepared target run directory (target_sites.json + target_vert/). "
-             "When set, target site selection flags are not allowed.",
-    )
-
-    p.add_argument("--target_pdb", type=str, default=None,
-                   help="Target PDB identifier (legacy mode without --target_run_dir)")
-    p.add_argument("--target_ppi_id", choices=["p1", "p2"], default="p1",
-                   help="ppi side of the target (legacy mode only; read from manifest if --target_run_dir)")
-    p.add_argument("--target_chain", type=str, default=None,
-                   help="Target chain id (legacy mode only; read from manifest if --target_run_dir)")
-
-    p.add_argument("--target_residue", type=int, default=None,
-                   help="[define_target_sites.py only] Target residue number")
-    p.add_argument("--target_atom", type=str, default=None,
-                   help="[define_target_sites.py only] Target atom name")
-    p.add_argument("--target_sampling_radius", type=float, default=None,
-                   help="[define_target_sites.py only] Radius (A) around target atom")
-    p.add_argument("--num_points", type=int, default=None,
-                   help="[define_target_sites.py only] FPS subsample count")
-
-    p.add_argument("--downsample", type=int, default=1, help="Downsample rate for seed site selection")
-    p.add_argument("--top_iface_percent", type=float, default=0.0,
-                   help="Top percentile of seed patches by interface score")
-    p.add_argument("--iface_cutoff", type=float, default=0.0, help="Interface score cutoff for seed patches")
-    p.add_argument("--interface_only", action="store_true",
-                   help="Search only seed interfaces (requires seed complexes)")
-    p.add_argument("--desc_dist_cutoff", type=float, default=1.5, help="Descriptor distance cutoff (filtering)")
-    p.add_argument("--desc_dist_score_cutoff", type=float, default=0.25, help="Post-alignment score cutoff")
-
-    p.add_argument("--output_dir", type=str, default=".", help="Output directory (legacy mode only)")
-    p.add_argument("--output_postfix", type=str, default="", help="Subfolder postfix (legacy mode only)")
-    p.add_argument("--count_clashes", action="store_true", help="Compute clashes (slower)")
-    p.add_argument("--ca_clash_threshold", type=float, default=100, help="CA clash threshold")
-    p.add_argument("--heavy_atom_clash_threshold", type=float, default=100, help="Heavy-atom clash threshold")
-    p.add_argument("--compute_source_residues", action="store_true",
-                   help="Map patch centers to residues via surf2atom (DSSP; slower)")
-
-    return p
 
 
 def log(msg):
@@ -86,7 +45,8 @@ def get_usalign_tmscores(p1_pdb, p2_pdb, cache):
     if key not in cache:
         process = Popen(
             ["/install/USalign/USalign", p1_pdb, p2_pdb, "-mm", "0", "-ter", "2"],
-            stdout=PIPE, stderr=PIPE,
+            stdout=PIPE,
+            stderr=PIPE,
         )
         stdout, _ = process.communicate()
         tmscore_list = [
@@ -109,7 +69,7 @@ def _reject_target_site_args(args):
         print(
             "Error: target site selection flags are not allowed with --target_run_dir:\n  "
             + ", ".join(bad)
-            + "\nRun define_target_sites.py to prepare the target run directory.",
+            + "\nRun python -m masif_mimicry.define_target_sites to prepare the target run directory.",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -190,7 +150,7 @@ def _resolve_target_setup(args, params):
     return P2, target_ppi_id, target_chain, P2_selected_points_idx, P2_patch_descs, p2_output_root, None
 
 
-def main(args):
+def run_search(args):
     _reject_target_site_args(args)
 
     local_tmp_dir = os.getenv("TMPDIR")
@@ -278,13 +238,19 @@ def main(args):
         if manifest is not None:
             partner_pdb_path = os.path.join(p2_output_root, manifest["partner_pdb_file"])
             if not os.path.isfile(partner_pdb_path):
-                print(f"Error: missing partner PDB {partner_pdb_path}. Re-run define_target_sites.py.", file=sys.stderr)
+                print(
+                    f"Error: missing partner PDB {partner_pdb_path}. "
+                    "Re-run python -m masif_mimicry.define_target_sites.",
+                    file=sys.stderr,
+                )
                 sys.exit(1)
             filtered_target_structure = PDBParser(QUIET=True).get_structure("", partner_pdb_path)
         else:
             P2_raw_pdb = os.path.join(
                 params["masif_target_root"],
-                "data_preparation", "00-raw_pdbs", f"{P2.split('_')[0]}.pdb",
+                "data_preparation",
+                "00-raw_pdbs",
+                f"{P2.split('_')[0]}.pdb",
             )
             P2_partner_chain_ids = parse_partner_chain_ids(P2, target_ppi_id)
             P2_partner_chain_suffix = "".join(P2_partner_chain_ids)
@@ -460,8 +426,3 @@ def main(args):
                     f"{seed_output_dir}/{P1}_{ppi_id}_to_{P2}_{target_ppi_id}.csv",
                     index=False,
                 )
-
-
-if __name__ == "__main__":
-    parser = create_parser()
-    main(parser.parse_args())

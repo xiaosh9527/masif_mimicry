@@ -14,17 +14,14 @@ import sys
 import numpy as np
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-SOURCE_DIR = os.path.join(SCRIPT_DIR, '..', 'source')
-sys.path.insert(0, SOURCE_DIR)
+MASIF_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, "..", ".."))
+sys.path.insert(0, os.path.join(MASIF_ROOT, "masif", "source"))
+sys.path.insert(0, os.path.join(MASIF_ROOT, "masif_mimicry", "source"))
 
-from utils import (  # noqa: E402
-    compute_descriptor_score,
-    compute_score_and_clashes,
-    get_features,
-    multidock,
-    set_params,
-    transform_patch_coords,
-)
+from masif_mimicry.config.paths import set_params
+from masif_mimicry.search.docking import multidock, transform_patch_coords
+from masif_mimicry.search.features import get_features
+from masif_mimicry.search.scoring import compute_descriptor_score, compute_score_and_clashes
 
 
 def score_legacy(P1_all_feats, P1_center, P2_all_feats, P2_center, transformation):

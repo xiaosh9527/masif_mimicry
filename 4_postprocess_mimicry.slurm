@@ -34,12 +34,13 @@ fi
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate MaSIF
 
-python -u -m masif_mimicry.cli.postprocess \
+python -u -m masif_mimicry.postprocess \
   --target_run_dir "${TARGET_RUN_DIR}" \
   --target_pdb "${POSTPROCESS_TARGET_PDB}" \
   --database_dir "${DATABASE_DIR}" \
   --target_preprocess_dir "${TARGET_PREPROCESS_DIR_REL}" \
   --ligand "${LIGAND}" \
+  --subset "${DATABASE_SUBSET_DIR}/${SLURM_ARRAY_TASK_ID}" \
   -o "${POSTPROCESS_OUT_BASENAME}_${SLURM_ARRAY_TASK_ID}.csv"
 
 echo "Post-processing completed: ${POSTPROCESS_OUT_BASENAME}_${SLURM_ARRAY_TASK_ID}.csv"

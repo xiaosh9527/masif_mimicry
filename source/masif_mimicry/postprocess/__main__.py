@@ -1,4 +1,4 @@
-"""CLI entry point: python -m masif_mimicry.cli.postprocess"""
+"""CLI entry point: python -m masif_mimicry.postprocess"""
 
 import os
 import sys
@@ -6,10 +6,8 @@ from argparse import ArgumentParser
 from pathlib import Path
 
 from masif_mimicry.config.paths import resolve_database_paths
-from masif_mimicry.postprocess.runner import (
-    discover_deduplicated_rows,
-    process_results_mimicry,
-)
+from masif_mimicry.postprocess.discovery import discover_deduplicated_rows
+from masif_mimicry.postprocess.pipeline import process_results_mimicry
 
 
 def main(argv=None):

@@ -24,7 +24,7 @@ apptainer exec \
   --bind /work:/work \
   --env PYTHONPATH="${PYTHONPATH}" \
   "${IMAGE}" \
-  python -u "${MASIF_MIMICRY_SOURCE}/define_target_sites.py" \
+  python -u -m masif_mimicry.define_target_sites \
     --target_preprocess_dir "${TARGET_PREPROCESS_DIR_REL}" \
     --target_pdb "${TARGET_PDB}" \
     --target_chain "${TARGET_CHAIN}" \

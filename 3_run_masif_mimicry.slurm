@@ -14,7 +14,8 @@ PIPELINE_DIR="${MIMICRY_PIPELINE_DIR:-${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BAS
 # shellcheck source=mimicry_pipeline.config.sh
 source "${PIPELINE_DIR}/mimicry_pipeline.config.sh"
 
-export PYTHONPATH="${PYTHONPATH:+$PYTHONPATH:}${MASIF_DB_SOURCE}:${MASIF_SEED_SOURCE}:${MASIF_MIMICRY_SOURCE}"
+export PYTHONPATH="${MASIF_MIMICRY_SOURCE}${PYTHONPATH:+:${PYTHONPATH}}"
+export PYTHONPATH="${MASIF_DB_SOURCE}:${MASIF_SEED_SOURCE}:${PYTHONPATH}"
 
 mkdir -p "${MASIF_MIMICRY_ROOT}/logs/mimicry"
 cd "${MASIF_MIMICRY_ROOT}"
@@ -29,7 +30,7 @@ apptainer exec \
   --bind /work:/work \
   --env PYTHONPATH="${PYTHONPATH}" \
   "${IMAGE}" \
-  python -u "${MASIF_MIMICRY_SOURCE}/masif_mimicry_search.py" \
+  python -u -m masif_mimicry.search \
     --database_dir "${DATABASE_DIR}" \
     --target_preprocess_dir "${TARGET_PREPROCESS_DIR_REL}" \
     --target_run_dir "${TARGET_RUN_DIR_REL}" \

@@ -1,5 +1,5 @@
-#!/usr/bin/env python3
 """Define target surface sites and write a shared target run directory for parallel search."""
+
 import argparse
 import os
 import shutil
@@ -7,11 +7,11 @@ import sys
 
 import numpy as np
 
-from utils import (
-    TARGET_SITES_MANIFEST,
-    get_features,
+from masif_mimicry.config.paths import set_params
+from masif_mimicry.search.features import get_features
+from masif_mimicry.search.manifest import TARGET_SITES_MANIFEST
+from masif_mimicry.search.target_sites import (
     select_target_sites_by_radius_fps,
-    set_params,
     write_partner_pdb_for_clashes,
     write_target_sites_manifest,
     write_target_vert_files,
@@ -20,7 +20,7 @@ from utils import (
 
 def create_parser():
     p = argparse.ArgumentParser(
-        description="Select target sites and prepare target_vert/ for masif_mimicry_search.py",
+        description="Select target sites and prepare target_vert/ for masif_mimicry search",
     )
     p.add_argument(
         "--target_preprocess_dir",

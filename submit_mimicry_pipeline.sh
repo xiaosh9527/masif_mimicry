@@ -3,7 +3,7 @@
 #
 # Usage:
 #   ./submit_mimicry_pipeline.sh
-#   ./submit_mimicry_pipeline.sh --overwrite   # passed to define_target_sites.py (step 2)
+#   ./submit_mimicry_pipeline.sh --overwrite   # passed to masif_mimicry.define_target_sites (step 2)
 
 set -euo pipefail
 

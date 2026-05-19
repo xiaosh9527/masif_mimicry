@@ -1,6 +1,6 @@
 import numpy as np
 
-from masif_mimicry.postprocess.postprocess_utils import maybe_load_structure
+from masif_mimicry.postprocess.structures import maybe_load_structure
 from masif_mimicry.postprocess.metrics.sasa import extract_ligand_residue
 
 

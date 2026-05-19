@@ -14,7 +14,7 @@ if __name__ == "__main__":
     sys.path.append(str(basedir))
 
 from utils import get_transformed_struct_from_row, resolve_database_paths
-from postprocess.utils import maybe_load_structure
+from postprocess.postprocess_utils import maybe_load_structure
 from postprocess.metrics.clashes import count_clashes
 from postprocess.metrics.sasa import compute_sasa_values
 from postprocess.metrics.interface import compute_binder_interface_metrics
@@ -34,6 +34,16 @@ Command-line usage:
         -o output.csv \\
         [--subset subset_ids.txt]
 """
+
+
+def parse_ligand_def(ligand_def: str) -> dict:
+    """
+    Parse --ligand CHAIN_RESNAME (e.g. A_021 -> chain A, hetero resname 021).
+    """
+    if "_" not in ligand_def:
+        raise ValueError(f"--ligand must be CHAIN_RESNAME, got {ligand_def!r}")
+    chain, resname = ligand_def.split("_", 1)
+    return {"chain": chain, "name": resname}
 
 
 def load_patch_coord(target_preprocess_dir, target_name, center_vix):
@@ -170,10 +180,7 @@ def process_results_mimicry(
     Preserves existing CSV columns (including flattened_transform).
     """
     target_pdb = Path(target_pdb)
-    ligand = {
-        "name": ligand_def.split("_")[0][:3],
-        "chain": ligand_def.split("_")[1],
-    }
+    ligand = parse_ligand_def(ligand_def)
     results = []
     first_write = True
 

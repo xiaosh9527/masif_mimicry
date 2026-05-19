@@ -1,6 +1,6 @@
 # Shared configuration for the MaSIF mimicry SLURM pipeline.
 # Sourced by 1_preprocess_pdb.slurm, 2_prepare_target_sites.slurm,
-# 3_run_masif_mimicry.slurm, and submit_mimicry_pipeline.sh
+# 3_run_masif_mimicry.slurm, 4_postprocess_mimicry.slurm, and submit_mimicry_pipeline.sh
 
 # --- Host paths ---
 MASIF_ROOT="/scratch/ymeng/masif_seed"
@@ -10,7 +10,8 @@ IMAGE="${MASIF_MIMICRY_ROOT}/masif_mimicry.sif"
 # Which pipeline steps to submit (true/false; used by submit_mimicry_pipeline.sh)
 RUN_PREPROCESS=false
 RUN_TARGET_SITES=false
-RUN_MIMICRY_SEARCH=true
+RUN_MIMICRY_SEARCH=false
+RUN_POSTPROCESS=true
 
 
 # --- Step 1: preprocess target PDB ---
@@ -42,6 +43,12 @@ DESC_DIST_SCORE_CUTOFF=0.45
 CA_CLASH_THRESHOLD=1.0
 HEAVY_ATOM_CLASH_THRESHOLD=5.0
 
+# --- Step 4: post-process search hits (conda env MaSIF; not Apptainer) ---
+# POSTPROCESS_TARGET_PDB: chain-C target for clashes/SASA (written by define_target_sites.py)
+POSTPROCESS_TARGET_PDB="/scratch/ymeng/masif_seed/masif_mimicry/data/NUP98/search_results/021structure_C_AB_/021structure_AB.pdb"
+POSTPROCESS_OUT_DIR="/scratch/ymeng/masif_seed/masif_mimicry/data/NUP98/search_results/postprocess"
+POSTPROCESS_CSV_BASE="subset"
+
 # --- Derived (do not edit unless needed) ---
 MASIF_DB_ROOT="${MASIF_ROOT}/masif"
 MASIF_SEED_ROOT="${MASIF_ROOT}/masif_seed_search"
@@ -49,3 +56,6 @@ MASIF_DB_SOURCE="${MASIF_DB_ROOT}/source"
 MASIF_SEED_SOURCE="${MASIF_SEED_ROOT}/source"
 MASIF_MIMICRY_SOURCE="${MASIF_MIMICRY_ROOT}/source"
 TARGET_RUN_DIR="${MASIF_MIMICRY_ROOT}/${TARGET_RUN_DIR_REL}"
+POSTPROCESS_OUT_BASENAME="${POSTPROCESS_OUT_DIR}/${POSTPROCESS_CSV_BASE}"
+
+mkdir -p "${POSTPROCESS_OUT_DIR}"

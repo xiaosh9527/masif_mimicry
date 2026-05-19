@@ -1,7 +1,7 @@
 from Bio.PDB.SASA import ShrakeRupley
 from Bio.PDB.StructureBuilder import StructureBuilder
 
-from src.utils import maybe_load_structure
+from postprocess.postprocess_utils import maybe_load_structure
 
 
 def get_sasa(structure, sub_surface_key=None):

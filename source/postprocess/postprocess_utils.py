@@ -12,16 +12,13 @@ from Bio.SVDSuperimposer import SVDSuperimposer
 from sklearn.cluster import DBSCAN
 from tqdm import tqdm
 
-from src.metrics.secondary_structure import find_sse
+from postprocess.metrics.secondary_structure import find_sse
 
-
-DATABASE_ROOT = os.environ.get(
-    "DATABASE_ROOT",
-    os.environ.get(
-        "DATA_ROOT",
-        "/work/lpdi/users/diazrovi/domaindome/20260221-AFDBv6_domaindome_DPAM_masif/dpam_domaindome_masif_db",
-    ),
-)
+import sys
+if __name__ == "__main__":
+    basedir = Path(__file__).resolve().parent.parent
+    sys.path.append(str(basedir))
+from utils import resolve_database_paths
 
 # 20 standard amino acid three-letter codes
 STANDARD_AA = frozenset({
@@ -63,25 +60,38 @@ def maybe_load_structure(path_or_structure: Union[str, Path, Structure]):
     return path_or_structure if isinstance(path_or_structure, Structure) else PDBParser(QUIET=True).get_structure('', str(path_or_structure))
 
 
-def get_descriptor(row, descriptor_root=Path(DATABASE_ROOT) / 'descriptors' / 'sc05' / 'all_feat', flipped=False):
+def _descriptor_root(database_dir):
+    db_root, _ = resolve_database_paths(database_dir)
+    return Path(db_root) / "descriptors" / "sc05" / "all_feat"
+
+
+def get_descriptor(row, database_dir, flipped=False):
     if math.isnan(row.matched_vix):
         return None
-    desc_file = Path(descriptor_root, row.matched_protein, 'p1_desc_flipped.npy' if flipped else 'p1_desc_straight.npy')
+    desc_file = Path(
+        _descriptor_root(database_dir),
+        row.matched_protein,
+        "p1_desc_flipped.npy" if flipped else "p1_desc_straight.npy",
+    )
     return np.load(desc_file)[int(row.matched_vix)]
 
 
-def get_transformed_struct(row, database_root=DATABASE_ROOT):
-    original_pdb = Path(database_root, 'data_preparation', '01-benchmark_pdbs', row.matched_protein + '.pdb')
-    struct = PDBParser().get_structure(row.matched_protein, original_pdb)
+def get_transformed_struct(row, database_dir):
+    """Apply flattened_transform to a domainome PDB (legacy matched_protein rows)."""
+    if hasattr(row, "P1_id") and hasattr(row, "flattened_transform"):
+        from utils import get_transformed_struct_from_row
+        return get_transformed_struct_from_row(row, database_dir)
 
-    transform = np.array(list(map(float, row.flattened_transform.split(',')))).reshape(4, 4)
+    _, db_prep = resolve_database_paths(database_dir)
+    original_pdb = Path(db_prep, "01-benchmark_pdbs", f"{row.matched_protein}.pdb")
+    struct = PDBParser().get_structure(row.matched_protein, original_pdb)
+    transform = np.array(list(map(float, row.flattened_transform.split(",")))).reshape(4, 4)
     struct.transform(rot=transform[:3, :3].T, tran=transform[:3, 3])
     return struct
 
 
-def get_pdb(row, database_root=DATABASE_ROOT):
-
-    struct = get_transformed_struct(row, database_root)
+def get_pdb(row, database_dir):
+    struct = get_transformed_struct(row, database_dir)
 
     out = StringIO()
     pdb_io = PDBIO()
@@ -153,7 +163,7 @@ class GLoopMatcher:
         return min(rmsd_vals) if len(rmsd_vals) > 0 else None
 
 
-def structural_clusters(df, rmsd_thresh=5.0, database_root=DATABASE_ROOT):
+def structural_clusters(df, database_dir, rmsd_thresh=5.0):
     """
     Clusters domains according to their binding mode (RMSD-based).
     Adds the following new columns to the input dataframe:
@@ -185,7 +195,10 @@ def structural_clusters(df, rmsd_thresh=5.0, database_root=DATABASE_ROOT):
             current_cluster_label += 1
             continue
 
-        positions = [get_coords(get_transformed_struct(row, database_root=database_root)) for i, row in domain_table.iterrows()]
+        positions = [
+            get_coords(get_transformed_struct(row, database_dir))
+            for i, row in domain_table.iterrows()
+        ]
 
         rmsd_vals = np.zeros((len(domain_table), len(domain_table)))
         for i in range(len(domain_table)):

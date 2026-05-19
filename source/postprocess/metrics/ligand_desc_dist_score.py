@@ -7,7 +7,7 @@ if __name__ == "__main__":
     basedir = Path(__file__).resolve().parent.parent.parent
     sys.path.append(str(basedir))
 
-from src.utils import DATABASE_ROOT
+from utils import resolve_database_paths
 
 
 def pairwise_distances(coord1, coord2):
@@ -28,7 +28,16 @@ def desc_dist_score(query_desc, binder_desc, query_surf_coord, binder_surf_coord
     return desc_dist_score
 
 
-def ligand_desc_dist_score(target_name, binder_name, ligand_name, ligand_chain, binder_transform, target_processed_root, binder_processed_root=DATABASE_ROOT):
+def ligand_desc_dist_score(
+    target_name,
+    binder_name,
+    ligand_name,
+    ligand_chain,
+    binder_transform,
+    target_processed_root,
+    database_dir,
+):
+    db_root, db_prep = resolve_database_paths(database_dir)
 
     # Load surface coordinates
     target_surf_coord = np.stack([
@@ -36,20 +45,20 @@ def ligand_desc_dist_score(target_name, binder_name, ligand_name, ligand_chain, 
         for dim in ['X', 'Y', 'Z']
     ], axis=1)
     binder_surf_coord = np.stack([
-        np.load(Path(binder_processed_root, "data_preparation", "04b-precomputation_12A", "precomputation", binder_name, f"p1_{dim}.npy"))
+        np.load(Path(db_prep, "04b-precomputation_12A", "precomputation", binder_name, f"p1_{dim}.npy"))
         for dim in ['X', 'Y', 'Z']
     ], axis=1)
 
     # Load descriptors
     target_desc = np.load(Path(target_processed_root, "descriptors", "sc05", "all_feat", target_name, "p1_desc_flipped.npy"))
-    binder_desc = np.load(Path(binder_processed_root, "descriptors", "sc05", "all_feat", binder_name, "p1_desc_straight.npy"))
+    binder_desc = np.load(Path(db_root, "descriptors", "sc05", "all_feat", binder_name, "p1_desc_straight.npy"))
 
     # Transform binder surface point cloud
     R, t = binder_transform[:3, :3], binder_transform[:3, 3]
     binder_surf_coord = binder_surf_coord @ R.T + t[None, :]
 
     # Extract relevant surface points on target
-    target_pdb = Path(target_processed_root, "data_preparation", "01-benchmark_pdbs", f"{target_name}.pdb")
+    target_pdb = Path(target_processed_root, "data_preparation", "01-benchmark_pdbs", f"{target_name}.pdb")  # target preprocess tree
     target_struct = PDBParser(QUIET=True).get_structure("", target_pdb)
     target_atoms = [a for a in target_struct.get_atoms() if a.element != 'H']
     target_coord = np.array([a.get_coord() for a in target_atoms])

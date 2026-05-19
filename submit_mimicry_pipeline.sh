@@ -29,7 +29,7 @@ while [[ $# -gt 0 ]]; do
     *)
       echo "Unknown option: $1" >&2
       echo "Usage: $0 [--overwrite]" >&2
-      echo "Enable steps via RUN_PREPROCESS, RUN_TARGET_SITES, RUN_MIMICRY_SEARCH in mimicry_pipeline.config.sh" >&2
+      echo "Enable steps via RUN_PREPROCESS, RUN_TARGET_SITES, RUN_MIMICRY_SEARCH, RUN_POSTPROCESS in mimicry_pipeline.config.sh" >&2
       exit 1
       ;;
   esac
@@ -38,12 +38,14 @@ done
 RUN_PREPROCESS_B=false
 RUN_TARGET_SITES_B=false
 RUN_MIMICRY_SEARCH_B=false
+RUN_POSTPROCESS_B=false
 is_true "${RUN_PREPROCESS:-false}" && RUN_PREPROCESS_B=true
 is_true "${RUN_TARGET_SITES:-false}" && RUN_TARGET_SITES_B=true
 is_true "${RUN_MIMICRY_SEARCH:-false}" && RUN_MIMICRY_SEARCH_B=true
+is_true "${RUN_POSTPROCESS:-false}" && RUN_POSTPROCESS_B=true
 
-if ! "${RUN_PREPROCESS_B}" && ! "${RUN_TARGET_SITES_B}" && ! "${RUN_MIMICRY_SEARCH_B}"; then
-  echo "Error: enable at least one of RUN_PREPROCESS, RUN_TARGET_SITES, RUN_MIMICRY_SEARCH in mimicry_pipeline.config.sh" >&2
+if ! "${RUN_PREPROCESS_B}" && ! "${RUN_TARGET_SITES_B}" && ! "${RUN_MIMICRY_SEARCH_B}" && ! "${RUN_POSTPROCESS_B}"; then
+  echo "Error: enable at least one of RUN_PREPROCESS, RUN_TARGET_SITES, RUN_MIMICRY_SEARCH, RUN_POSTPROCESS in mimicry_pipeline.config.sh" >&2
   exit 1
 fi
 
@@ -57,6 +59,7 @@ PREV_DEP=""
 JOB1=""
 JOB2=""
 JOB3=""
+JOB4=""
 
 if "${RUN_PREPROCESS_B}"; then
   JOB1=$(sbatch --parsable "${SBATCH_COMMON[@]}" "${SCRIPT_DIR}/1_preprocess_pdb.slurm")
@@ -93,17 +96,34 @@ if "${RUN_MIMICRY_SEARCH_B}"; then
       "${SCRIPT_DIR}/3_run_masif_mimicry.slurm")
   fi
   echo "Step 3 (search):       job ${JOB3}  (array ${SEARCH_ARRAY})"
+  PREV_DEP="afterok:${JOB3}"
 else
   echo "Step 3 (search):       skipped (RUN_MIMICRY_SEARCH=False)"
+fi
+
+if "${RUN_POSTPROCESS_B}"; then
+  if [[ -n "${PREV_DEP}" ]]; then
+    JOB4=$(sbatch --parsable "${SBATCH_COMMON[@]}" --dependency="${PREV_DEP}" \
+      --array="${SEARCH_ARRAY}" \
+      "${SCRIPT_DIR}/4_postprocess_mimicry.slurm")
+  else
+    JOB4=$(sbatch --parsable "${SBATCH_COMMON[@]}" \
+      --array="${SEARCH_ARRAY}" \
+      "${SCRIPT_DIR}/4_postprocess_mimicry.slurm")
+  fi
+  echo "Step 4 (postprocess):  job ${JOB4}  (conda env MaSIF)"
+else
+  echo "Step 4 (postprocess):  skipped (RUN_POSTPROCESS=False)"
 fi
 
 cat <<EOF
 
 Pipeline submitted.
   Config: ${SCRIPT_DIR}/mimicry_pipeline.config.sh
-  RUN_PREPROCESS=${RUN_PREPROCESS}  RUN_TARGET_SITES=${RUN_TARGET_SITES}  RUN_MIMICRY_SEARCH=${RUN_MIMICRY_SEARCH}
+  RUN_PREPROCESS=${RUN_PREPROCESS}  RUN_TARGET_SITES=${RUN_TARGET_SITES}  RUN_MIMICRY_SEARCH=${RUN_MIMICRY_SEARCH}  RUN_POSTPROCESS=${RUN_POSTPROCESS}
   Target: ${TARGET_RUN_DIR}
   Seeds:  ${DATABASE_SUBSET_DIR}/<array_id>
+  Postprocess output: ${POSTPROCESS_OUT_BASENAME}_<array_id>.csv
 
 Monitor:
   squeue -u "\$USER"
@@ -113,4 +133,7 @@ EOF
 
 if [[ -n "${JOB3}" ]]; then
   echo "  tail -f ${MASIF_MIMICRY_ROOT}/logs/mimicry_${JOB3}_*.out"
+fi
+if [[ -n "${JOB4}" ]]; then
+  echo "  tail -f ${MASIF_MIMICRY_ROOT}/logs/postprocess_${JOB4}_*.out"
 fi

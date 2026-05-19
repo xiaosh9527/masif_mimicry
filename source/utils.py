@@ -17,33 +17,55 @@ elif version.parse('0.6.0') < version.parse(o3d.__version__):
 else:
     ICPConvergenceCriteria = o3d.ICPConvergenceCriteria
 
+BENCHMARK_PDB_SUBDIR = "01-benchmark_pdbs"
+BENCHMARK_SURF_SUBDIR = "01-benchmark_surfaces"
+PRECOMP_12A_SUBDIR = "04b-precomputation_12A/precomputation"
+PRECOMP_9A_SUBDIR = "04a-precomputation_9A/precomputation"
+
+
+def resolve_database_paths(database_dir: str):
+    """
+    Resolve MaSIF database root and data_preparation directory.
+
+    database_dir may be either the database root (e.g. TED .../output) or
+    .../output/data_preparation directly.
+    """
+    database_dir = os.path.normpath(database_dir)
+    if os.path.basename(database_dir) == "data_preparation":
+        return os.path.dirname(database_dir), database_dir
+    return database_dir, os.path.join(database_dir, "data_preparation")
+
+
 def set_params(*, database_dir: str, target_preprocess_dir: str, masif_app: str = "ppi_search") -> dict:
     '''
     Set the parameters for the mimicry search.
     '''
     params = {}
-    # Seeds (i.e., the fragments) that will be used for this search.
-    params["top_seed_dir"] = os.path.normpath(database_dir)
-    # Root of the targets directory (where to find the sources.)
+    db_root, db_prep = resolve_database_paths(database_dir)
+    params["database_root"] = db_root
+    params["database_preparation_dir"] = db_prep
+    # Legacy alias used by structural clustering and path helpers.
+    params["top_seed_dir"] = db_prep
     params["masif_target_root"] = os.path.normpath(target_preprocess_dir)
-    # Output directory (target_name, target_site, matched_seed)
     params["out_dir_template"] = "tmp/{}/"
 
-    # Seed locations
-    params["seed_surf_dir"] = os.path.join(params["top_seed_dir"], masif_opts["ply_chain_dir"])
-    params["seed_iface_dir"] = os.path.join(params["top_seed_dir"], masif_opts["site"]["out_pred_dir"])
-    params["seed_ply_iface_dir"] = os.path.join(params["top_seed_dir"], masif_opts["site"]["out_surf_dir"])
-    params["seed_pdb_dir"] = os.path.join(params["top_seed_dir"], masif_opts["pdb_chain_dir"])
-    params["seed_desc_dir"] = os.path.join(params["top_seed_dir"], masif_opts["ppi_search"]["desc_dir"])
-    params["seed_precomp_dir"] = os.path.join(params["top_seed_dir"], masif_opts[masif_app]["masif_precomputation_dir"])
+    # Seed locations (under data_preparation/)
+    params["seed_surf_dir"] = os.path.join(db_prep, BENCHMARK_SURF_SUBDIR)
+    params["seed_pdb_dir"] = os.path.join(db_prep, BENCHMARK_PDB_SUBDIR)
+    params["seed_precomp_dir"] = os.path.join(db_prep, PRECOMP_12A_SUBDIR)
+    params["seed_iface_dir"] = os.path.join(db_root, masif_opts["site"]["out_pred_dir"])
+    params["seed_ply_iface_dir"] = os.path.join(db_root, masif_opts["site"]["out_surf_dir"])
+    params["seed_desc_dir"] = os.path.join(db_root, masif_opts["ppi_search"]["desc_dir"])
 
-    # Target locations
+    # Target locations (full MaSIF preprocess tree for the target)
     params["target_surf_dir"] = os.path.join(params["masif_target_root"], masif_opts["ply_chain_dir"])
     params["target_iface_dir"] = os.path.join(params["masif_target_root"], masif_opts["site"]["out_pred_dir"])
     params["target_ply_iface_dir"] = os.path.join(params["masif_target_root"], masif_opts["site"]["out_surf_dir"])
     params["target_pdb_dir"] = os.path.join(params["masif_target_root"], masif_opts["pdb_chain_dir"])
     params["target_desc_dir"] = os.path.join(params["masif_target_root"], masif_opts["ppi_search"]["desc_dir"])
-    params["target_precomp_dir"] = os.path.join(params["masif_target_root"], masif_opts[masif_app]["masif_precomputation_dir"])
+    params["target_precomp_dir"] = os.path.join(
+        params["masif_target_root"], masif_opts[masif_app]["masif_precomputation_dir"]
+    )
 
     return params
 
@@ -757,18 +779,15 @@ def transform_structure(input_path, T, output_path=None):
     return structure
 
 
-def seed_pdb_path(p1_id, ppi_id, database_root):
-    """Resolve preprocessed seed PDB path (same layout as get_features)."""
-    if ppi_id == "p1":
-        P = p1_id.split("_")[0] + "_" + p1_id.split("_")[1]
-    else:
-        P = p1_id.split("_")[0] + "_" + p1_id.split("_")[2]
-    return os.path.join(database_root, masif_opts["pdb_chain_dir"], f"{P}.pdb")
+def seed_pdb_path(p1_id, database_dir):
+    """Resolve preprocessed seed PDB under database_dir/01-benchmark_pdbs/."""
+    _, db_prep = resolve_database_paths(database_dir)
+    return os.path.join(db_prep, BENCHMARK_PDB_SUBDIR, f"{p1_id}.pdb")
 
 
-def get_transformed_struct_from_row(row, database_root):
+def get_transformed_struct_from_row(row, database_dir):
     """Apply flattened_transform to the seed PDB using mimicry/Open3D conventions."""
-    pdb_path = seed_pdb_path(row.P1_id, row.P1_source_ppi_id, database_root)
+    pdb_path = seed_pdb_path(row.P1_id, database_dir)
     T = np.array(list(map(float, row.flattened_transform.split(",")))).reshape(4, 4)
     return transform_structure(pdb_path, T, output_path=None)
 
@@ -791,18 +810,20 @@ def _pairwise_rmsd(coords1, coords2):
     return float(np.sqrt(np.mean(np.sum(diff * diff, axis=-1))))
 
 
-def structural_clusters(df, rmsd_thresh=5.0, database_root=None):
+def structural_clusters(df, rmsd_thresh=5.0, database_dir=None, database_root=None):
     """
     Cluster hits in a mimicry results table by binding mode (RMSD in target frame).
 
-    Expects columns P1_id, P1_source_ppi_id, flattened_transform.
+    Expects columns P1_id, flattened_transform.
     Adds cluster_id, cluster_size, cluster_mean_rmsd (appended by caller column order).
 
     Rows that cannot be transformed or have incompatible backbone size receive
     cluster_id=-1 and NA for cluster_size / cluster_mean_rmsd.
     """
-    if database_root is None:
-        raise ValueError("database_root is required for structural_clusters")
+    if database_dir is None:
+        database_dir = database_root
+    if database_dir is None:
+        raise ValueError("database_dir is required for structural_clusters")
 
     df = df.copy()
     df["cluster_id"] = -1
@@ -816,7 +837,7 @@ def structural_clusters(df, rmsd_thresh=5.0, database_root=None):
     valid_indices = []
     for idx, row in df.iterrows():
         try:
-            struct = get_transformed_struct_from_row(row, database_root)
+            struct = get_transformed_struct_from_row(row, database_dir)
             positions.append(_backbone_coords(struct))
             valid_indices.append(idx)
         except Exception:

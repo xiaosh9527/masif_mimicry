@@ -18,7 +18,8 @@ def create_parser():
     p = argparse.ArgumentParser("Simplified MaSIF mimicry search")
 
     p.add_argument("--database_dir", type=str, required=True,
-                   help="MaSIF seed database directory (preprocessed data/<db_name>/ tree)")
+                   help="MaSIF database root (e.g. TED_domainome/output); "
+                        "seed PDBs live under data_preparation/01-benchmark_pdbs/")
     p.add_argument("--target_preprocess_dir", type=str, required=True,
                    help="MaSIF target preprocess directory (same layout for the target protein)")
 
@@ -454,7 +455,7 @@ def main(args):
 
             if len(scores[(P1, P2)]["P1_id"]) > 0:
                 hit_df = pd.DataFrame(scores[(P1, P2)])
-                hit_df = structural_clusters(hit_df, database_root=params["top_seed_dir"])
+                hit_df = structural_clusters(hit_df, database_dir=params["database_preparation_dir"])
                 hit_df.to_csv(
                     f"{seed_output_dir}/{P1}_{ppi_id}_to_{P2}_{target_ppi_id}.csv",
                     index=False,

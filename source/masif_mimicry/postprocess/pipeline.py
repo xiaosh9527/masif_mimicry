@@ -94,6 +94,7 @@ def process_results_mimicry(
     results = []
     first_write = True
 
+    print(f"Postprocessing {len(df)} rows...")
     for idx, row in tqdm(df.iterrows(), total=len(df), desc="postprocess"):
         match_info = row.to_dict()
         p1_id = match_info.get("P1_id", idx)

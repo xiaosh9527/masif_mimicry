@@ -1,5 +1,6 @@
 #!/bin/bash -l
 #SBATCH --job-name=postprocess_mimicry
+#SBATCH --partition=standard
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
@@ -33,6 +34,14 @@ fi
 # shellcheck source=/dev/null
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate MaSIF
+
+# Cap BLAS/OpenMP threads to Slurm CPUs (default OMP uses all cores and can hit
+# libgomp "Thread creation failed: Resource temporarily unavailable" with cpus-per-task=1).
+: "${SLURM_CPUS_PER_TASK:=1}"
+export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK}"
+export OPENBLAS_NUM_THREADS="${SLURM_CPUS_PER_TASK}"
+export MKL_NUM_THREADS="${SLURM_CPUS_PER_TASK}"
+export NUMEXPR_NUM_THREADS="${SLURM_CPUS_PER_TASK}"
 
 python -u -m masif_mimicry.postprocess \
   --target_run_dir "${TARGET_RUN_DIR}" \

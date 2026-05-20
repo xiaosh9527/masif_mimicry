@@ -10,7 +10,7 @@ IMAGE="${MASIF_MIMICRY_ROOT}/masif_mimicry.sif"
 # Which pipeline steps to submit (true/false; used by submit_mimicry_pipeline.sh)
 RUN_PREPROCESS=false
 RUN_TARGET_SITES=false
-RUN_MIMICRY_SEARCH=true
+RUN_MIMICRY_SEARCH=false
 RUN_POSTPROCESS=true
 
 
@@ -35,7 +35,7 @@ TARGET_RUN_DIR_REL="data/NUP98/search_results/021structure_C_AB_"
 # --- Step 3: mimicry search ---
 DATABASE_DIR="/scratch/ymeng/TED_domainome/output"
 DATABASE_SUBSET_DIR="/scratch/ymeng/TED_domainome/output/filtered_intracellular_domainome/subsets"
-SEARCH_ARRAY="6-10"
+SEARCH_ARRAY="0-499"
 
 # Desc/dist thresholds (search)
 DESC_DIST_CUTOFF=2.0

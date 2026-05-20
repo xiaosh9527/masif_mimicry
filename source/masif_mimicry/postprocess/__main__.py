@@ -8,6 +8,7 @@ from pathlib import Path
 from masif_mimicry.config.paths import resolve_database_paths
 from masif_mimicry.postprocess.discovery import discover_deduplicated_rows
 from masif_mimicry.postprocess.pipeline import process_results_mimicry
+from datetime import datetime
 
 
 def main(argv=None):
@@ -58,6 +59,8 @@ def main(argv=None):
             subset_list = {line.strip() for line in f if line.strip()}
         df = df[df["P1_id"].isin(subset_list)]
 
+    print(f"Starting post-processing at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
     process_results_mimicry(
         df,
         target_pdb=args.target_pdb,
@@ -67,6 +70,7 @@ def main(argv=None):
         out_csv_file=args.out_csv_file,
     )
     print(f"Results written to {args.out_csv_file}")
+    print(f"Post-processing completed at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 
 if __name__ == "__main__":

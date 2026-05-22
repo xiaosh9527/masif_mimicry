@@ -45,6 +45,9 @@ def compute_hit_clash_score(
     heavy_atom_clash_threshold=5.0,
 ):
     """Count clashes for a transformed source PDB; return score zeroed if over threshold."""
+    if target_structure is None or len(list(target_structure.get_atoms())) == 0:
+        return 0, 0, descriptor_score
+
     pdb_parser = PDBParser(QUIET=True)
     source_structure = pdb_parser.get_structure("", P1_pdb)
     ca_clashes, heavy_clashes = count_clashes(source_structure, target_structure, radius=2.0)

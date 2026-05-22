@@ -66,19 +66,18 @@ def create_parser():
         help="[define_target_sites only] Target atom name",
     )
     p.add_argument(
-        "--target_sampling_radius",
-        type=float,
-        default=None,
-        help="[define_target_sites only] Radius (A) around target atom",
-    )
-    p.add_argument(
         "--num_points",
         type=int,
         default=None,
-        help="[define_target_sites only] FPS subsample count",
+        help="[define_target_sites only] Number of sites (residue mode) or minimum (exhaustive)",
     )
 
-    p.add_argument("--downsample", type=int, default=1, help="Downsample rate for seed site selection")
+    p.add_argument(
+        "--downsample",
+        type=int,
+        default=1,
+        help="Downsample rate for seed patch selection",
+    )
     p.add_argument(
         "--top_iface_percent",
         type=float,

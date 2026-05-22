@@ -3,22 +3,37 @@ import os
 from Bio.PDB import PDBParser
 
 
+def target_chain_from_pdb_id(pdb_identifier, target_ppi_id):
+    """Return the target (binder) chain id from a MaSIF PDB identifier."""
+    parts = pdb_identifier.split("_")
+    if target_ppi_id == "p1":
+        if len(parts) < 2:
+            raise ValueError(
+                f"Cannot parse target chain from {pdb_identifier!r} with target_ppi_id p1"
+            )
+        return parts[1]
+    if len(parts) < 3:
+        raise ValueError(
+            f"Cannot parse target chain from {pdb_identifier!r} with target_ppi_id p2"
+        )
+    return parts[2]
+
+
 def parse_partner_chain_ids(pdb_identifier, target_ppi_id):
     """
     Return partner chain id(s) for clash counting from a MaSIF PDB identifier.
+
+    PPI complexes use three segments, e.g. 021structure_C_AB (p1 binder C, partner AB).
+    Single-domain ids use two segments, e.g. Q16236-F1-dom-02_A (binder A only); returns None.
     """
     parts = pdb_identifier.split("_")
     if target_ppi_id == "p1":
         if len(parts) < 3:
-            raise ValueError(
-                f"Cannot parse partner chains from {pdb_identifier!r} with target_ppi_id p1"
-            )
+            return None
         raw = parts[2]
     else:
         if len(parts) < 2:
-            raise ValueError(
-                f"Cannot parse partner chains from {pdb_identifier!r} with target_ppi_id p2"
-            )
+            return None
         raw = parts[1]
     return _chain_ids_for_filter(raw)
 

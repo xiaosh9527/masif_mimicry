@@ -123,38 +123,74 @@ def farthest_point_subsample(coords: np.ndarray, num_points: int, seed_idx: int 
     return np.array(selected, dtype=int)
 
 
-def select_target_sites_by_radius_fps(
-    mesh_vertices: np.ndarray,
-    pdb_path: str,
+def parse_site_idx_list(site_idx: str) -> list:
+    """Parse comma-separated MaSIF surface site indices (e.g. '1207,940,300')."""
+    if not site_idx or not str(site_idx).strip():
+        raise ValueError("--site_idx must be a non-empty comma-separated list of integers")
+    out = []
+    seen = set()
+    for part in str(site_idx).split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            idx = int(part)
+        except ValueError as exc:
+            raise ValueError(f"Invalid site index {part!r} in --site_idx (expected integers)") from exc
+        if idx in seen:
+            continue
+        seen.add(idx)
+        out.append(idx)
+    if not out:
+        raise ValueError("--site_idx contained no valid integers")
+    return out
+
+
+def validate_site_indices(site_indices, num_sites: int, pdb_identifier: str) -> np.ndarray:
+    """Ensure manual site indices are in range for this target's descriptor table."""
+    arr = np.asarray(site_indices, dtype=int)
+    bad = arr[(arr < 0) | (arr >= num_sites)]
+    if len(bad) > 0:
+        raise ValueError(
+            f"Site index(es) {bad.tolist()} out of range [0, {num_sites - 1}] for {pdb_identifier} "
+            f"({num_sites} MaSIF patch centers)"
+        )
+    return arr
+
+
+def select_target_sites_by_residue_iface(
+    p2_all_feats: dict,
     chain: str,
     residue: int,
     atom_name: str,
-    radius: float,
     num_points: int,
+    k_nearest: int = 10,
 ) -> np.ndarray:
-    """Select target sites within radius of an atom, then FPS subsample."""
-    mesh_coords = np.asarray(mesh_vertices)
-    atom_coords = get_atom_coords(pdb_path, chain, residue, atom_name)
-    dists = np.linalg.norm(mesh_coords[:, None, :] - atom_coords[None, :, :], axis=-1)
-    min_dists = dists.min(axis=1)
-    candidates = np.where(min_dists <= radius)[0]
-    if len(candidates) == 0:
+    """
+    Legacy target site selection: k nearest surface vertices to a residue/atom,
+    ranked by interface score, keep top num_points.
+    """
+    mesh_vertices = np.asarray(p2_all_feats["mesh"].vertices)
+    iface = p2_all_feats["iface"][0]
+    nearest_idx = res2surf(
+        mesh_vertices,
+        p2_all_feats["pdb"],
+        chain=chain,
+        residue=residue,
+        atom_name=atom_name,
+        k=k_nearest,
+    )
+    if nearest_idx.ndim > 1:
+        nearest_idx = nearest_idx[0]
+    nearest_idx = np.asarray(nearest_idx, dtype=int)
+    if len(nearest_idx) == 0:
         raise ValueError(
-            f"No surface vertices within {radius} A of {atom_name} "
-            f"chain {chain} residue {residue} in {pdb_path}"
+            f"No surface vertices near {atom_name} chain {chain} residue {residue} "
+            f"in {p2_all_feats['pdb']}"
         )
-    if len(candidates) < num_points:
-        print(
-            f"WARNING: Only {len(candidates)} vertices within {radius} A of "
-            f"{atom_name} chain {chain} residue {residue}; using all "
-            f"(requested {num_points}).",
-            flush=True,
-        )
-        return np.sort(candidates)
-    candidate_coords = mesh_coords[candidates]
-    seed_local = int(np.argmin(min_dists[candidates]))
-    local_selected = farthest_point_subsample(candidate_coords, num_points, seed_idx=seed_local)
-    return np.sort(candidates[local_selected])
+    order = np.argsort(iface[nearest_idx])[::-1]
+    n_keep = min(num_points, len(order))
+    return np.sort(nearest_idx[order[:n_keep]])
 
 
 def write_target_vert_files(p2_all_feats, selected_points_idx, target_ppi_id, output_dir, outward_shift=0.25):
@@ -219,13 +255,16 @@ def load_target_run_manifest(target_run_dir):
 
 def write_partner_pdb_for_clashes(params, target_pdb, target_ppi_id, target_run_dir):
     """Write chain-filtered partner PDB once for downstream clash counting."""
+    partner_chain_ids = parse_partner_chain_ids(target_pdb, target_ppi_id)
+    if partner_chain_ids is None:
+        return None, None
+
     P2_raw_pdb = os.path.join(
         params["masif_target_root"],
         "data_preparation",
         "00-raw_pdbs",
         f"{target_pdb.split('_')[0]}.pdb",
     )
-    partner_chain_ids = parse_partner_chain_ids(target_pdb, target_ppi_id)
     partner_suffix = "".join(partner_chain_ids)
     partner_filename = f"{target_pdb.split('_')[0]}_{partner_suffix}.pdb"
     partner_path = os.path.join(target_run_dir, partner_filename)

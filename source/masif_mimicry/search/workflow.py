@@ -14,18 +14,22 @@ from masif_mimicry.search.features import get_features
 from masif_mimicry.search.scoring import compute_descriptor_score, compute_hit_clash_score
 from masif_mimicry.search.target_sites import (
     load_target_run_manifest,
-    select_target_sites_by_radius_fps,
+    select_target_sites_by_residue_iface,
     surf2atom,
     write_target_vert_files,
 )
 from masif_mimicry.utils.clustering import structural_clusters
-from masif_mimicry.utils.parse_structures import get_filtered_target_structure, parse_partner_chain_ids
+from masif_mimicry.utils.parse_structures import (
+    get_filtered_target_structure,
+    parse_partner_chain_ids,
+    target_chain_from_pdb_id,
+)
 from masif_mimicry.utils.transforms import apply_transform, transform_structure
 
+# Flags used only by define_target_sites (not --downsample: shared with seed selection).
 TARGET_SITE_ARG_NAMES = (
     "target_residue",
     "target_atom",
-    "target_sampling_radius",
     "num_points",
 )
 
@@ -76,10 +80,8 @@ def _reject_target_site_args(args):
 
 
 def _validate_target_chain(target_ppi_id, target_chain, P2):
-    if target_ppi_id == "p1":
-        assert target_chain == P2.split("_")[1], f"Target chain {target_chain} does not match PDB {P2}"
-    else:
-        assert target_chain == P2.split("_")[2], f"Target chain {target_chain} does not match PDB {P2}"
+    expected = target_chain_from_pdb_id(P2, target_ppi_id)
+    assert target_chain == expected, f"Target chain {target_chain} does not match PDB {P2} (expected {expected})"
 
 
 def _resolve_target_setup(args, params):
@@ -93,10 +95,21 @@ def _resolve_target_setup(args, params):
         _validate_target_chain(target_ppi_id, target_chain, P2)
         P2_all_feats = get_features(params, P2, target_ppi_id, source=False, flip_desc=False)
         P2_patch_descs = P2_all_feats["desc"][P2_selected_points_idx]
-        log(
-            f"Using {len(P2_selected_points_idx)} pre-defined target sites from {p2_output_root} "
-            f"(residue {manifest['target_residue']} {manifest['target_atom']} chain {target_chain})"
-        )
+        if manifest.get("selection") == "manual":
+            log(
+                f"Using {len(P2_selected_points_idx)} manual target sites from {p2_output_root}: "
+                f"{manifest.get('sites', P2_selected_points_idx.tolist())}"
+            )
+        elif "target_residue" in manifest and "target_atom" in manifest:
+            log(
+                f"Using {len(P2_selected_points_idx)} pre-defined target sites from {p2_output_root} "
+                f"(residue {manifest['target_residue']} {manifest['target_atom']} chain {target_chain})"
+            )
+        else:
+            log(
+                f"Using {len(P2_selected_points_idx)} pre-defined target sites from {p2_output_root} "
+                f"(selection={manifest.get('selection', '?')})"
+            )
         return P2, target_ppi_id, target_chain, P2_selected_points_idx, P2_patch_descs, p2_output_root, manifest
 
     if not args.target_pdb or not args.target_chain:
@@ -109,19 +122,19 @@ def _resolve_target_setup(args, params):
     _validate_target_chain(target_ppi_id, target_chain, P2)
 
     P2_all_feats = get_features(params, P2, target_ppi_id, source=False, flip_desc=False)
-    radius = args.target_sampling_radius if args.target_sampling_radius is not None else 5.0
     num_points = args.num_points if args.num_points is not None else 5
+    downsample = args.downsample if args.downsample is not None else 1
 
     if args.target_residue and args.target_atom:
+        k_nearest = max(10, num_points * downsample)
         try:
-            P2_selected_points_idx = select_target_sites_by_radius_fps(
-                np.array(P2_all_feats["mesh"].vertices),
-                P2_all_feats["pdb"],
+            P2_selected_points_idx = select_target_sites_by_residue_iface(
+                P2_all_feats,
                 chain=target_chain,
                 residue=args.target_residue,
                 atom_name=args.target_atom,
-                radius=radius,
                 num_points=num_points,
+                k_nearest=k_nearest,
             )
         except ValueError as e:
             print(f"Error: {e}", flush=True)
@@ -236,34 +249,41 @@ def run_search(args):
     partner_pdb_path = None
     if args.count_clashes:
         if manifest is not None:
-            partner_pdb_path = os.path.join(p2_output_root, manifest["partner_pdb_file"])
-            if not os.path.isfile(partner_pdb_path):
-                print(
-                    f"Error: missing partner PDB {partner_pdb_path}. "
-                    "Re-run python -m masif_mimicry.define_target_sites.",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
-            filtered_target_structure = PDBParser(QUIET=True).get_structure("", partner_pdb_path)
+            partner_pdb_file = manifest.get("partner_pdb_file")
+            if partner_pdb_file:
+                partner_pdb_path = os.path.join(p2_output_root, partner_pdb_file)
+                if not os.path.isfile(partner_pdb_path):
+                    print(
+                        f"Error: missing partner PDB {partner_pdb_path}. "
+                        "Re-run python -m masif_mimicry.define_target_sites.",
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
+                filtered_target_structure = PDBParser(QUIET=True).get_structure("", partner_pdb_path)
+            else:
+                filtered_target_structure = None
         else:
-            P2_raw_pdb = os.path.join(
-                params["masif_target_root"],
-                "data_preparation",
-                "00-raw_pdbs",
-                f"{P2.split('_')[0]}.pdb",
-            )
             P2_partner_chain_ids = parse_partner_chain_ids(P2, target_ppi_id)
-            P2_partner_chain_suffix = "".join(P2_partner_chain_ids)
-            filtered_target_structure = get_filtered_target_structure(
-                P2_raw_pdb, P2_partner_chain_ids, {},
-            )
-            partner_pdb_path = os.path.join(
-                p2_output_root, f"{P2.split('_')[0]}_{P2_partner_chain_suffix}.pdb",
-            )
-            if not os.path.isfile(partner_pdb_path):
-                io = PDBIO()
-                io.set_structure(filtered_target_structure)
-                io.save(partner_pdb_path)
+            if P2_partner_chain_ids is None:
+                filtered_target_structure = None
+            else:
+                P2_raw_pdb = os.path.join(
+                    params["masif_target_root"],
+                    "data_preparation",
+                    "00-raw_pdbs",
+                    f"{P2.split('_')[0]}.pdb",
+                )
+                P2_partner_chain_suffix = "".join(P2_partner_chain_ids)
+                filtered_target_structure = get_filtered_target_structure(
+                    P2_raw_pdb, P2_partner_chain_ids, {},
+                )
+                partner_pdb_path = os.path.join(
+                    p2_output_root, f"{P2.split('_')[0]}_{P2_partner_chain_suffix}.pdb",
+                )
+                if not os.path.isfile(partner_pdb_path):
+                    io = PDBIO()
+                    io.set_structure(filtered_target_structure)
+                    io.save(partner_pdb_path)
 
     for P1 in lines:
         if len(P1.split("_")) == 2:

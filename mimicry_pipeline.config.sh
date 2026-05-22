@@ -1,4 +1,4 @@
-# Shared configuration for the MaSIF mimicry SLURM pipeline.
+# Shared configuration for the MaSIF mimicry SLURM pipelie.
 # Sourced by 1_preprocess_pdb.slurm, 2_prepare_target_sites.slurm,
 # 3_run_masif_mimicry.slurm, 4_postprocess_mimicry.slurm, and submit_mimicry_pipeline.sh
 
@@ -22,14 +22,13 @@ LIGAND_SDF="input/A_021.sdf"
 TARGET_PREPROCESS_DIR="${MASIF_MIMICRY_ROOT}/data/NUP98"
 
 # --- Step 2: define target sites (paths relative to MASIF_MIMICRY_ROOT for Python CLIs) ---
-TARGET_PREPROCESS_DIR_REL="data/NUP98"
 TARGET_PDB="021structure_C_AB"
 TARGET_CHAIN="C"
 TARGET_RESIDUE=728
 TARGET_ATOM="CB"
 TARGET_PPI_ID="p1"
 NUM_POINTS=10
-TARGET_SAMPLING_RADIUS=5
+TARGET_DOWNSAMPLE=5
 TARGET_RUN_DIR_REL="data/NUP98/search_results/021structure_C_AB_"
 
 # --- Step 3: mimicry search ---
@@ -45,6 +44,8 @@ HEAVY_ATOM_CLASH_THRESHOLD=5.0
 
 # --- Step 4: post-process search hits (conda env MaSIF; not Apptainer) ---
 # POSTPROCESS_TARGET_PDB: chain-C target for clashes/SASA (written by masif_mimicry.define_target_sites)
+# DATABASE_CSV: domain metadata for iface aggregates + merge (filtered to postprocess P1_ids in memory)
+DATABASE_CSV="/scratch/ymeng/TED_domainome/output/filtered_intracellular_domainome/TED_human_domainome_info_intracellular.csv"
 POSTPROCESS_TARGET_PDB="/scratch/ymeng/masif_seed/masif_mimicry/data/NUP98/search_results/021structure_C_AB_/021structure_AB.pdb"
 POSTPROCESS_OUT_DIR="/scratch/ymeng/masif_seed/masif_mimicry/data/NUP98/search_results/postprocess"
 POSTPROCESS_CSV_BASE="subset"

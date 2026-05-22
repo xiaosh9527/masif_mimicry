@@ -3,7 +3,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
-#SBATCH --mem=6G
+#SBATCH --mem=7000
 #SBATCH --time=02:00:00
 #SBATCH --output=logs/mimicry_%A/slurm_%A_%a.out
 #SBATCH --error=logs/mimicry_%A/slurm_%A_%a.out
@@ -32,8 +32,8 @@ apptainer exec \
   "${IMAGE}" \
   python -u -m masif_mimicry.search \
     --database_dir "${DATABASE_DIR}" \
-    --target_preprocess_dir "${TARGET_PREPROCESS_DIR_REL}" \
-    --target_run_dir "${TARGET_RUN_DIR_REL}" \
+    --target_preprocess_dir "${TARGET_PREPROCESS_DIR}" \
+    --target_run_dir "${TARGET_RUN_DIR}" \
     --top_iface_percent 0.0 \
     --count_clashes \
     --ca_clash_threshold "${CA_CLASH_THRESHOLD}" \

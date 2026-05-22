@@ -6,8 +6,8 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=7000
 #SBATCH --time=00:30:00
-#SBATCH --output=logs/masif_%j.out
-#SBATCH --error=logs/masif_%j.out
+#SBATCH --output=logs/preprocess_%j.out
+#SBATCH --error=logs/preprocess_%j.out
 
 set -euo pipefail
 

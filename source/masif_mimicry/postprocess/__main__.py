@@ -40,8 +40,20 @@ def main(argv=None):
     parser.add_argument("-o", "--out_csv_file", type=Path, required=True, help="Combined output CSV")
     parser.add_argument("--subset", type=Path, default=None, help="Optional P1_id list (one per line)")
     parser.add_argument("--ligand", type=str, required=True, help="Ligand CHAIN_RESNAME, e.g. 'A_021'")
+    parser.add_argument(
+        "--database_info_csv",
+        type=Path,
+        required=True,
+        help="Domain metadata CSV (e.g. TED_human_domainome_info_intracellular.csv); "
+        "only rows whose id is in the postprocess P1_id set are loaded into memory.",
+    )
 
     args = parser.parse_args(argv)
+
+    database_info_csv = Path(os.path.abspath(os.path.expanduser(str(args.database_info_csv))))
+    if not database_info_csv.is_file():
+        print(f"Error: database_info_csv not found: {database_info_csv}", file=sys.stderr)
+        sys.exit(1)
 
     database_dir = os.path.abspath(os.path.expanduser(str(args.database_dir)))
     _, db_prep = resolve_database_paths(database_dir)
@@ -68,6 +80,7 @@ def main(argv=None):
         target_preprocess_dir=args.target_preprocess_dir,
         ligand_def=args.ligand,
         out_csv_file=args.out_csv_file,
+        database_info_csv=database_info_csv,
     )
     print(f"Results written to {args.out_csv_file}")
     print(f"Post-processing completed at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")

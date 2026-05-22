@@ -9,7 +9,9 @@ import pandas as pd
 from Bio.PDB import PDBIO
 from tqdm import tqdm
 
+from masif_mimicry.postprocess.database_info import load_domain_metadata_filtered, merge_metadata_columns
 from masif_mimicry.postprocess.metrics.clashes import count_clashes
+from masif_mimicry.postprocess.metrics.iface_aggregate import IFACE_AGGREGATE_COLUMNS, add_iface_aggregate_metrics
 from masif_mimicry.postprocess.metrics.interface import compute_binder_interface_metrics
 from masif_mimicry.postprocess.metrics.sasa import compute_sasa_values
 from masif_mimicry.postprocess.structures import maybe_load_structure
@@ -84,6 +86,7 @@ def process_results_mimicry(
     target_preprocess_dir,
     ligand_def,
     out_csv_file=None,
+    database_info_csv=None,
 ):
     """
     Loop over deduplicated rows and append metric columns to each row.
@@ -93,6 +96,14 @@ def process_results_mimicry(
     ligand = parse_ligand_def(ligand_def)
     results = []
     first_write = True
+
+    p1_ids = set(df["P1_id"].astype(str))
+    meta_indexed = None
+    if database_info_csv is not None:
+        meta_df = load_domain_metadata_filtered(database_info_csv, p1_ids)
+        if not meta_df.empty:
+            meta_df = meta_df.drop_duplicates(subset=["id"], keep="first")
+            meta_indexed = meta_df.set_index(meta_df["id"].astype(str), drop=False)
 
     print(f"Postprocessing {len(df)} rows...")
     for idx, row in tqdm(df.iterrows(), total=len(df), desc="postprocess"):
@@ -150,6 +161,19 @@ def process_results_mimicry(
             match_info["matched_iface_resi"] = None
             match_info["matched_iface_n_resi"] = None
             match_info["matched_iface_plddt"] = None
+
+        pid = str(p1_id)
+        if meta_indexed is not None and pid in meta_indexed.index:
+            try:
+                merge_metadata_columns(match_info, meta_indexed.loc[pid])
+            except Exception as e:
+                print(f"[{p1_id}] Error merging database info: {e}", flush=True)
+        try:
+            add_iface_aggregate_metrics(match_info)
+        except Exception as e:
+            print(f"[{p1_id}] Error computing iface aggregate metrics: {e}", flush=True)
+            for col in IFACE_AGGREGATE_COLUMNS:
+                match_info[col] = np.nan
 
         try:
             if binder_tmp is None and matched_struct is not None:

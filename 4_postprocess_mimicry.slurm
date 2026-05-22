@@ -18,7 +18,6 @@ source "${PIPELINE_DIR}/mimicry_pipeline.config.sh"
 export PYTHONPATH="${MASIF_MIMICRY_SOURCE}${PYTHONPATH:+:${PYTHONPATH}}"
 export PYTHONPATH="${MASIF_DB_SOURCE}:${PYTHONPATH}"
 
-mkdir -p "${MASIF_MIMICRY_ROOT}/logs"
 cd "${MASIF_MIMICRY_ROOT}"
 
 if [[ ! -d "${TARGET_RUN_DIR}" ]]; then
@@ -31,6 +30,7 @@ if [[ ! -f "${POSTPROCESS_TARGET_PDB}" ]]; then
   exit 1
 fi
 
+echo "Activating MaSIF conda environment"
 # shellcheck source=/dev/null
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate MaSIF
@@ -43,12 +43,14 @@ export OPENBLAS_NUM_THREADS="${SLURM_CPUS_PER_TASK}"
 export MKL_NUM_THREADS="${SLURM_CPUS_PER_TASK}"
 export NUMEXPR_NUM_THREADS="${SLURM_CPUS_PER_TASK}"
 
+echo "Running post-processing for subset ${SLURM_ARRAY_TASK_ID}"
 python -u -m masif_mimicry.postprocess \
   --target_run_dir "${TARGET_RUN_DIR}" \
   --target_pdb "${POSTPROCESS_TARGET_PDB}" \
   --database_dir "${DATABASE_DIR}" \
-  --target_preprocess_dir "${TARGET_PREPROCESS_DIR_REL}" \
+  --target_preprocess_dir "${TARGET_PREPROCESS_DIR}" \
   --ligand "${LIGAND}" \
+  --database_info_csv "${DATABASE_CSV}" \
   --subset "${DATABASE_SUBSET_DIR}/${SLURM_ARRAY_TASK_ID}" \
   -o "${POSTPROCESS_OUT_BASENAME}_${SLURM_ARRAY_TASK_ID}.csv"
 

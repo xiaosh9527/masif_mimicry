@@ -21,17 +21,19 @@ cd "${MASIF_MIMICRY_ROOT}"
 
 apptainer exec \
   --bind "${MASIF_ROOT}:${MASIF_ROOT}" \
+  --bind /scratch:/scratch \
   --bind /work:/work \
   --env PYTHONPATH="${PYTHONPATH}" \
   "${IMAGE}" \
   python -u -m masif_mimicry.define_target_sites \
-    --target_preprocess_dir "${TARGET_PREPROCESS_DIR_REL}" \
+    --target_preprocess_dir "${TARGET_PREPROCESS_DIR}" \
     --target_pdb "${TARGET_PDB}" \
     --target_chain "${TARGET_CHAIN}" \
     --target_residue "${TARGET_RESIDUE}" \
     --target_atom "${TARGET_ATOM}" \
     --target_ppi_id "${TARGET_PPI_ID}" \
     --num_points "${NUM_POINTS}" \
-    --target_sampling_radius "${TARGET_SAMPLING_RADIUS}" \
+    --downsample "${TARGET_DOWNSAMPLE}" \
     --target_run_dir "${TARGET_RUN_DIR_REL}" \
     "$@"
+

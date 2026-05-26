@@ -1,0 +1,34 @@
+{
+  "cluster_size": {
+    "min": 5,
+    "max": null
+  },
+  "cluster_mean_rmsd": {
+    "min": null,
+    "max": 4
+  },
+  "MaSIF-score": {
+    "min": 0.47,
+    "max": null
+  },
+  "matched_iface_plddt": {
+    "min": 80,
+    "max": null
+  },
+  "norm_sasa": {
+    "min": null,
+    "max": 90
+  },
+  "iface_intracellular_frac": {
+    "min": 0.8,
+    "max": null
+  },
+  "ligand_buried_in_lb": {
+    "min": 109,
+    "max": null
+  },
+  "domain_length": {
+    "min": null,
+    "max": 102
+  }
+}

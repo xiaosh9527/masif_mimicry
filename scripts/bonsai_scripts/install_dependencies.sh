@@ -9,11 +9,16 @@ cd $root
 # Installation of conda environment
 #--------------------------------
 
-echo "Creating bonsai conda environment"
-conda env create -f $root/scripts/bonsai_scripts/environment.yml
+# Check if MaSIF conda environment already exists
+if conda env list | grep -qE '^\s*MaSIF\s'; then
+    echo "MaSIF conda environment already exists."
+else
+    echo "Creating MaSIF conda environment"
+    conda env create -f $root/scripts/bonsai_scripts/environment.yml
+fi
 
-echo "Activating bonsai conda environment"
-conda activate bonsai
+echo "Activating MaSIF conda environment"
+conda activate MaSIF
 echo "Done"
 
 #--------------------------------
@@ -37,21 +42,21 @@ echo "Done"
 #--------------------------------
 # Installation of Stride
 #--------------------------------
-# wget the stride executable
-echo "Downloading Stride executable"
-cd ..
-mkdir -p stride
-cd stride
-wget https://webclu.bio.wzw.tum.de/stride/stride.tar.gz
+# # wget the stride executable
+# echo "Downloading Stride executable"
+# cd ..
+# mkdir -p stride
+# cd stride
+# wget https://webclu.bio.wzw.tum.de/stride/stride.tar.gz
 
-# untar the stride executable
-echo "Untaring Stride executable"
-tar -xzf stride.tar.gz
+# # untar the stride executable
+# echo "Untaring Stride executable"
+# tar -xzf stride.tar.gz
 
-# compile the stride executable
-make
+# # compile the stride executable
+# make
 
-# test if stride executable is downloaded successfully
-./stride --help
+# # test if stride executable is downloaded successfully
+# ./stride --help
 
-echo "Done"
+# echo "Done"

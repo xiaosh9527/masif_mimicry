@@ -15,7 +15,7 @@ from dash import ALL, Dash, Input, Output, State, callback_context, dcc, html, n
 
 # ------ Data paths ------
 # Path to results file
-results_path = "/scratch/ymeng/masif_seed/masif_mimicry/data/NUP98/search_results/021structure_C_mimicry_postprocessed.csv"
+results_path = "/scratch/ymeng/masif_seed/masif_mimicry/data/NUP98/search_results/021structure_C_mimicry_library_102aa_260522.csv"
 
 # Path to target .pdb file
 target_path = "/scratch/ymeng/masif_seed/masif_mimicry/data/NUP98/input/021structure_AB.pdb"

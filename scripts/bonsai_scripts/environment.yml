@@ -1,4 +1,4 @@
-name: bonsai
+name: MaSIF
 channels:
   - conda-forge
   - defaults

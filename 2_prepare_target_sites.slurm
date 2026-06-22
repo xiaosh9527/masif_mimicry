@@ -3,7 +3,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
-#SBATCH --mem=4G
+#SBATCH --mem=7000
 #SBATCH --time=00:30:00
 #SBATCH --output=logs/mimicry_prepare_%j.out
 #SBATCH --error=logs/mimicry_prepare_%j.out
@@ -29,11 +29,12 @@ apptainer exec \
     --target_preprocess_dir "${TARGET_PREPROCESS_DIR}" \
     --target_pdb "${TARGET_PDB}" \
     --target_chain "${TARGET_CHAIN}" \
-    --target_residue "${TARGET_RESIDUE}" \
-    --target_atom "${TARGET_ATOM}" \
+    --query_pdb "${QUERY_PDB}" \
+    --query_chain "${QUERY_CHAIN}" \
+    --query_residue "${QUERY_RESIDUE}" \
+    --grid_distance_cutoff "${GRID_DISTANCE_CUTOFF}" \
     --target_ppi_id "${TARGET_PPI_ID}" \
     --num_points "${NUM_POINTS}" \
-    --downsample "${TARGET_DOWNSAMPLE}" \
     --target_run_dir "${TARGET_RUN_DIR_REL}" \
+    --overwrite \
     "$@"
-

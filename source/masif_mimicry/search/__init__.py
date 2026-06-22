@@ -9,7 +9,7 @@ from masif_mimicry.search.scoring import (
 )
 from masif_mimicry.search.target_sites import (
     load_target_run_manifest,
-    select_target_sites_by_residue_iface,
+    select_target_sites_by_grid,
     surf2atom,
     write_partner_pdb_for_clashes,
     write_target_sites_manifest,
@@ -26,7 +26,7 @@ __all__ = [
     "load_target_run_manifest",
     "multidock",
     "select_patches",
-    "select_target_sites_by_residue_iface",
+    "select_target_sites_by_grid",
     "structural_clusters",
     "surf2atom",
     "transform_patch_coords",

@@ -13,7 +13,7 @@ from masif_mimicry.search.manifest import TARGET_SITES_MANIFEST
 from masif_mimicry.search.docking import select_patches
 from masif_mimicry.search.target_sites import (
     parse_site_idx_list,
-    select_target_sites_by_residue_iface,
+    select_target_sites_by_grid,
     validate_site_indices,
     write_partner_pdb_for_clashes,
     write_target_sites_manifest,
@@ -36,26 +36,31 @@ def create_parser():
     p.add_argument("--target_ppi_id", choices=["p1", "p2"], default="p1")
     p.add_argument("--target_chain", type=str, required=True, help="Target chain id for sanity checks")
     p.add_argument(
-        "--target_residue",
-        type=int,
-        help="Target residue number (with --target_atom: nearest-surface + iface ranking)",
-    )
-    p.add_argument(
-        "--target_atom",
+        "--query_pdb",
         type=str,
-        help="Target atom name (e.g. CA, CB); used with --target_residue",
+        help="PDB file containing the query residue (any path; same frame as preprocessed target)",
     )
     p.add_argument(
-        "--downsample",
+        "--query_chain",
+        type=str,
+        help="Chain id in --query_pdb for the query residue",
+    )
+    p.add_argument(
+        "--query_residue",
         type=int,
-        default=1,
-        help="Downsample rate for exhaustive site selection, or scales k-nearest pool (x10) in residue mode",
+        help="Residue number in --query_pdb for grid site selection",
+    )
+    p.add_argument(
+        "--grid_distance_cutoff",
+        type=float,
+        default=4.0,
+        help="Distance (A) from any query-residue heavy atom to include mesh vertices",
     )
     p.add_argument(
         "--num_points",
         type=int,
         default=5,
-        help="Number of target sites (residue mode) or minimum when using exhaustive selection",
+        help="Number of target sites (grid mode) or minimum when using exhaustive selection",
     )
     p.add_argument("--iface_cutoff", type=float, default=0.0, help="Interface score cutoff (exhaustive mode)")
     p.add_argument(
@@ -70,11 +75,17 @@ def create_parser():
         help="Exhaustive mode: only interface-labeled vertices",
     )
     p.add_argument(
+        "--downsample",
+        type=int,
+        default=1,
+        help="Downsample rate for exhaustive site selection only",
+    )
+    p.add_argument(
         "--site_idx",
         type=str,
         default=None,
         help="Comma-separated MaSIF patch center indices (e.g. '1207,940,300'). "
-        "Overrides residue/exhaustive selection when set.",
+        "Overrides grid/exhaustive selection when set.",
     )
     p.add_argument(
         "--target_run_dir",
@@ -118,9 +129,10 @@ def main(args):
     n_patch_centers = len(P2_all_feats["desc"])
 
     if args.site_idx is not None:
-        if args.target_residue is not None or args.target_atom:
+        grid_args = (args.query_pdb, args.query_chain, args.query_residue)
+        if any(x is not None for x in grid_args):
             print(
-                "WARNING: --site_idx overrides --target_residue/--target_atom and sampling flags.",
+                "WARNING: --site_idx overrides --query_pdb/--query_chain/--query_residue.",
                 flush=True,
             )
         try:
@@ -134,26 +146,36 @@ def main(args):
             f"Using {len(selected_points_idx)} manual site indices: {selected_points_idx.tolist()}",
             flush=True,
         )
-    elif args.target_residue is not None and args.target_atom:
-        k_nearest = max(10, args.num_points * args.downsample)
+    elif args.query_pdb and args.query_chain and args.query_residue is not None:
+        query_pdb = os.path.abspath(os.path.expanduser(args.query_pdb))
+        if not os.path.isfile(query_pdb):
+            print(f"Error: query_pdb not found: {query_pdb}", file=sys.stderr)
+            sys.exit(1)
         try:
-            selected_points_idx = select_target_sites_by_residue_iface(
+            selected_points_idx = select_target_sites_by_grid(
                 P2_all_feats,
-                chain=args.target_chain,
-                residue=args.target_residue,
-                atom_name=args.target_atom,
+                query_pdb=query_pdb,
+                chain=args.query_chain,
+                residue=args.query_residue,
                 num_points=args.num_points,
-                k_nearest=k_nearest,
+                distance_cutoff=args.grid_distance_cutoff,
             )
         except ValueError as e:
             print(f"Error: {e}", flush=True)
             sys.exit(1)
-        selection = "residue_iface"
+        selection = "grid"
         print(
-            f"Selected {len(selected_points_idx)} sites near residue {args.target_residue} "
-            f"({args.target_atom}) from {k_nearest} nearest vertices (downsample={args.downsample}).",
+            f"Selected {len(selected_points_idx)} grid sites near residue "
+            f"{args.query_chain}:{args.query_residue} from {query_pdb} "
+            f"(cutoff={args.grid_distance_cutoff} A, num_points={args.num_points}).",
             flush=True,
         )
+    elif args.query_pdb or args.query_chain or args.query_residue is not None:
+        print(
+            "Error: grid selection requires --query_pdb, --query_chain, and --query_residue together.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     else:
         selected_points_idx, _, _ = select_patches(
             P2_all_feats,
@@ -185,7 +207,6 @@ def main(args):
         "target_ppi_id": args.target_ppi_id,
         "target_chain": args.target_chain,
         "selection": selection,
-        "downsample": args.downsample,
         "num_points": args.num_points,
         "sites": sites,
         "target_pdb_file": target_pdb_filename,
@@ -193,10 +214,13 @@ def main(args):
     }
     if selection == "manual":
         manifest["site_idx"] = args.site_idx
-    if args.target_residue is not None:
-        manifest["target_residue"] = args.target_residue
-        manifest["target_atom"] = args.target_atom
+    if selection == "grid":
+        manifest["query_pdb"] = os.path.abspath(os.path.expanduser(args.query_pdb))
+        manifest["query_chain"] = args.query_chain
+        manifest["query_residue"] = args.query_residue
+        manifest["grid_distance_cutoff"] = args.grid_distance_cutoff
     if selection == "exhaustive":
+        manifest["downsample"] = args.downsample
         manifest["iface_cutoff"] = args.iface_cutoff
         manifest["top_iface_percent"] = args.top_iface_percent
         manifest["interface_only"] = args.interface_only

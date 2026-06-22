@@ -85,24 +85,6 @@ def surf2atom(
     return nearest_atom, nearest_atom_ss
 
 
-def get_atom_coords(pdb_path: str, chain: str, residue: int, atom_name: str) -> np.ndarray:
-    """Return Nx3 coordinates for all atoms matching chain/residue/atom_name."""
-    parser = PDBParser(QUIET=True)
-    struct = parser.get_structure("target", pdb_path)
-    atoms = [
-        atom
-        for atom in struct.get_atoms()
-        if atom.get_parent().get_id()[1] == residue
-        and atom.get_parent().get_parent().get_id() == chain
-        and atom.get_id() == atom_name
-    ]
-    if len(atoms) == 0:
-        raise ValueError(
-            f"No atom {atom_name} found on chain {chain} residue {residue} in {pdb_path}"
-        )
-    return np.array([atom.get_coord() for atom in atoms])
-
-
 def farthest_point_subsample(coords: np.ndarray, num_points: int, seed_idx: int = 0) -> np.ndarray:
     """Farthest-point sampling; returns local indices into coords."""
     n = len(coords)
@@ -158,39 +140,96 @@ def validate_site_indices(site_indices, num_sites: int, pdb_identifier: str) -> 
     return arr
 
 
-def select_target_sites_by_residue_iface(
+def poisson_disk_subsample(mesh, num_points: int) -> np.ndarray:
+    """Poisson-disk sample mesh vertices; returns sorted vertex indices (non-deterministic)."""
+    if not mesh.has_vertex_normals():
+        mesh.compute_vertex_normals()
+    sampled_points = mesh.sample_points_poisson_disk(num_points)
+    mesh_coords = np.asarray(mesh.vertices)
+    squared_dists = np.sum(
+        np.square(
+            np.asarray(sampled_points.points).reshape(-1, 1, 3)
+            - mesh_coords.reshape(1, -1, 3)
+        ),
+        axis=-1,
+    )
+    subsampled_indices = np.argmin(squared_dists, axis=-1)
+    return np.sort(subsampled_indices)
+
+
+def _resolve_residue_id(structure, chain: str, residue_number: int):
+    """Return the BioPython residue id tuple for a unique residue number on chain."""
+    matching = [
+        res.id
+        for res in structure[0][chain].get_residues()
+        if res.id[1] == residue_number
+    ]
+    if len(matching) == 0:
+        raise ValueError(
+            f"No residue {residue_number} on chain {chain}"
+        )
+    if len(matching) > 1:
+        raise ValueError(
+            f"Residue number {residue_number} on chain {chain} is not unique: {matching}"
+        )
+    return matching[0]
+
+
+def select_target_sites_by_grid(
     p2_all_feats: dict,
+    query_pdb: str,
     chain: str,
     residue: int,
-    atom_name: str,
     num_points: int,
-    k_nearest: int = 10,
+    distance_cutoff: float = 4.0,
 ) -> np.ndarray:
     """
-    Legacy target site selection: k nearest surface vertices to a residue/atom,
-    ranked by interface score, keep top num_points.
+    Grid target site selection (tricomplex search_grid.py logic).
+
+    Locate a residue in an arbitrary query PDB, find MaSIF mesh vertices within
+    distance_cutoff of any heavy atom, Poisson-disk subsample the mesh, and keep
+    the num_points vertices closest to the residue.
     """
-    mesh_vertices = np.asarray(p2_all_feats["mesh"].vertices)
-    iface = p2_all_feats["iface"][0]
-    nearest_idx = res2surf(
-        mesh_vertices,
-        p2_all_feats["pdb"],
-        chain=chain,
-        residue=residue,
-        atom_name=atom_name,
-        k=k_nearest,
+    mesh = p2_all_feats["mesh"]
+    parser = PDBParser(QUIET=True)
+    structure = parser.get_structure("query", query_pdb)
+    if chain not in structure[0]:
+        raise ValueError(f"Chain {chain!r} not found in {query_pdb}")
+    resid = _resolve_residue_id(structure, chain, residue)
+
+    residue_coords = np.stack(
+        [
+            atom.get_coord()
+            for atom in structure[0][chain][resid].get_atoms()
+            if atom.element != "H"
+        ]
     )
-    if nearest_idx.ndim > 1:
-        nearest_idx = nearest_idx[0]
-    nearest_idx = np.asarray(nearest_idx, dtype=int)
-    if len(nearest_idx) == 0:
+    if len(residue_coords) == 0:
         raise ValueError(
-            f"No surface vertices near {atom_name} chain {chain} residue {residue} "
-            f"in {p2_all_feats['pdb']}"
+            f"No heavy atoms for chain {chain} residue {residue} in {query_pdb}"
         )
-    order = np.argsort(iface[nearest_idx])[::-1]
-    n_keep = min(num_points, len(order))
-    return np.sort(nearest_idx[order[:n_keep]])
+
+    mesh_coords = np.asarray(mesh.vertices)
+    dists = np.sqrt(
+        np.sum(
+            np.square(mesh_coords.reshape(-1, 1, 3) - residue_coords.reshape(1, -1, 3)),
+            axis=-1,
+        )
+    )
+    residue_surface_indices = np.where(np.any(dists < distance_cutoff, axis=-1))[0]
+    if len(residue_surface_indices) == 0:
+        raise ValueError(
+            f"No mesh vertices within {distance_cutoff} A of chain {chain} "
+            f"residue {residue} in {query_pdb}"
+        )
+
+    num_sites = min(num_points, len(residue_surface_indices))
+    poisson_n = int(num_sites * len(mesh_coords) / len(residue_surface_indices))
+    poisson_n = max(poisson_n, num_sites)
+    mesh_inds = poisson_disk_subsample(mesh, poisson_n)
+    closest_to_residue = np.argsort(np.min(dists[mesh_inds, :], axis=-1))
+    target_vertices = mesh_inds[closest_to_residue[:num_sites]]
+    return np.sort(target_vertices)
 
 
 def write_target_vert_files(p2_all_feats, selected_points_idx, target_ppi_id, output_dir, outward_shift=0.25):
@@ -275,9 +314,3 @@ def write_partner_pdb_for_clashes(params, target_pdb, target_ppi_id, target_run_
     return partner_filename, partner_path
 
 
-def res2surf(point_coords: np.ndarray, pdb_path: str, chain: str, residue: int, atom_name: str, k: int = 1) -> np.ndarray:
-    """Return indices of closest surface points to a residue/atom."""
-    atom_coords = get_atom_coords(pdb_path, chain, residue, atom_name)
-    point_cdktree = cKDTree(point_coords)
-    d, nearest_points_idx = point_cdktree.query(atom_coords, k=k)
-    return nearest_points_idx

@@ -14,7 +14,7 @@ from masif_mimicry.search.features import get_features
 from masif_mimicry.search.scoring import compute_descriptor_score, compute_hit_clash_score
 from masif_mimicry.search.target_sites import (
     load_target_run_manifest,
-    select_target_sites_by_residue_iface,
+    select_target_sites_by_grid,
     surf2atom,
     write_target_vert_files,
 )
@@ -28,8 +28,9 @@ from masif_mimicry.utils.transforms import apply_transform, transform_structure
 
 # Flags used only by define_target_sites (not --downsample: shared with seed selection).
 TARGET_SITE_ARG_NAMES = (
-    "target_residue",
-    "target_atom",
+    "query_pdb",
+    "query_chain",
+    "query_residue",
     "num_points",
 )
 
@@ -100,10 +101,11 @@ def _resolve_target_setup(args, params):
                 f"Using {len(P2_selected_points_idx)} manual target sites from {p2_output_root}: "
                 f"{manifest.get('sites', P2_selected_points_idx.tolist())}"
             )
-        elif "target_residue" in manifest and "target_atom" in manifest:
+        elif manifest.get("selection") == "grid":
             log(
-                f"Using {len(P2_selected_points_idx)} pre-defined target sites from {p2_output_root} "
-                f"(residue {manifest['target_residue']} {manifest['target_atom']} chain {target_chain})"
+                f"Using {len(P2_selected_points_idx)} pre-defined grid target sites from {p2_output_root} "
+                f"(residue {manifest['query_chain']}:{manifest['query_residue']} "
+                f"from {manifest.get('query_pdb', '?')})"
             )
         else:
             log(
@@ -123,18 +125,16 @@ def _resolve_target_setup(args, params):
 
     P2_all_feats = get_features(params, P2, target_ppi_id, source=False, flip_desc=False)
     num_points = args.num_points if args.num_points is not None else 5
-    downsample = args.downsample if args.downsample is not None else 1
 
-    if args.target_residue and args.target_atom:
-        k_nearest = max(10, num_points * downsample)
+    if args.query_pdb and args.query_chain and args.query_residue is not None:
+        query_pdb = os.path.abspath(os.path.expanduser(args.query_pdb))
         try:
-            P2_selected_points_idx = select_target_sites_by_residue_iface(
+            P2_selected_points_idx = select_target_sites_by_grid(
                 P2_all_feats,
-                chain=target_chain,
-                residue=args.target_residue,
-                atom_name=args.target_atom,
+                query_pdb=query_pdb,
+                chain=args.query_chain,
+                residue=args.query_residue,
                 num_points=num_points,
-                k_nearest=k_nearest,
             )
         except ValueError as e:
             print(f"Error: {e}", flush=True)
@@ -203,10 +203,10 @@ def run_search(args):
     P2_all_feats = get_features(params, P2, target_ppi_id, source=False, flip_desc=False)
 
     if not args.target_run_dir:
-        if args.target_residue and args.target_atom:
+        if args.query_pdb and args.query_chain and args.query_residue is not None:
             print(
                 f"Searching sites similar to {P2} from {','.join(set(lines))}.\n"
-                f"This will go through {len(P2_selected_points_idx)} points...",
+                f"This will go through {len(P2_selected_points_idx)} grid-selected points...",
                 flush=True,
             )
         else:

@@ -54,16 +54,22 @@ def create_parser():
     )
 
     p.add_argument(
-        "--target_residue",
-        type=int,
-        default=None,
-        help="[define_target_sites only] Target residue number",
-    )
-    p.add_argument(
-        "--target_atom",
+        "--query_pdb",
         type=str,
         default=None,
-        help="[define_target_sites only] Target atom name",
+        help="[define_target_sites only] PDB containing the query residue",
+    )
+    p.add_argument(
+        "--query_chain",
+        type=str,
+        default=None,
+        help="[define_target_sites only] Chain id in --query_pdb",
+    )
+    p.add_argument(
+        "--query_residue",
+        type=int,
+        default=None,
+        help="[define_target_sites only] Residue number in --query_pdb for grid selection",
     )
     p.add_argument(
         "--num_points",

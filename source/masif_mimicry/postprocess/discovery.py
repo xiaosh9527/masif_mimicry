@@ -24,23 +24,39 @@ def _cluster_summary(df):
     return summary
 
 
-def select_representative_row(df):
-    """Pick one row per seed CSV using cluster_size / cluster_mean_rmsd / MaSIF-score."""
+def _choose_cluster_id(df):
+    """Select cluster_id by largest cluster_size, then lowest cluster_mean_rmsd."""
     summary = _cluster_summary(df)
     max_size = summary["cluster_size"].max()
     top_clusters = summary[summary["cluster_size"] == max_size]
 
     if len(top_clusters) == 1:
-        chosen_cluster = top_clusters["cluster_id"].iloc[0]
-    else:
-        rmsd = top_clusters["cluster_mean_rmsd"].fillna(np.inf)
-        min_rmsd = rmsd.min()
-        chosen_cluster = top_clusters.loc[rmsd == min_rmsd, "cluster_id"].iloc[0]
+        return top_clusters["cluster_id"].iloc[0]
 
+    rmsd = top_clusters["cluster_mean_rmsd"].fillna(np.inf)
+    min_rmsd = rmsd.min()
+    return top_clusters.loc[rmsd == min_rmsd, "cluster_id"].iloc[0]
+
+
+def n_p2_source_sites_in_cluster(df, cluster_id):
+    """Count unique P2_source_site values among hits in cluster_id."""
+    cluster_hits = df[df["cluster_id"] == cluster_id]
+    if len(cluster_hits) == 0 or "P2_source_site" not in cluster_hits.columns:
+        return 0
+    return int(cluster_hits["P2_source_site"].nunique())
+
+
+def select_representative_row(df):
+    """Pick one row per seed CSV using cluster_size / cluster_mean_rmsd / MaSIF-score."""
+    chosen_cluster = _choose_cluster_id(df)
     candidates = df[df["cluster_id"] == chosen_cluster]
+    n_p2 = n_p2_source_sites_in_cluster(df, chosen_cluster)
+
     masif = pd.to_numeric(candidates["MaSIF-score"], errors="coerce")
     best_score = masif.max()
-    return candidates.loc[masif == best_score].iloc[0]
+    row = candidates.loc[masif == best_score].iloc[0].copy()
+    row["n_P2_source_site"] = n_p2
+    return row
 
 
 def discover_deduplicated_rows(target_run_dir):

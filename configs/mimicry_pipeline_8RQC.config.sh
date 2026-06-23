@@ -15,23 +15,23 @@ RUN_POSTPROCESS=true
 
 
 # --- Step 1: preprocess target PDB ---
-PDB_INPUT="data/input/8VLB_ABCD.pdb"
-PDB_CHAIN="8RQC_D_ABC"   # p1: chain C; p2: chains A and B
-LIGAND="A_3JF"
-LIGAND_SDF="data/input/8VLB_A_3JF.sdf"
-TARGET_PREPROCESS_DIR="${MASIF_MIMICRY_ROOT}/data/${PDB_CHAIN}/preprocess"
+PDB_INPUT="data/input/8RQC_AB.pdb"
+PDB_CHAIN="8RQC_B_A"   # p1: chain C; p2: chains A and B
+LIGAND="A_QFC"
+LIGAND_SDF="data/input/8RQC_A_QFC.sdf"
+TARGET_PREPROCESS_DIR="${MASIF_MIMICRY_ROOT}/data/8RQC/preprocess"
 
 # --- Step 2: define target sites (paths relative to MASIF_MIMICRY_ROOT for Python CLIs) ---
-TARGET_PDB=${PDB_CHAIN}
-TARGET_CHAIN="D"
+TARGET_PDB="8RQC_B_A"
+TARGET_CHAIN="B"
 TARGET_PPI_ID="p1"
-NUM_POINTS=20
+NUM_POINTS=15
 # Grid selection: residue from any PDB in the same coordinate frame as the preprocessed target
-QUERY_PDB=${PDB_INPUT}
+QUERY_PDB="data/input/8RQC_AB.pdb"
 QUERY_CHAIN="A"
-QUERY_RESIDUE=301
+QUERY_RESIDUE=602
 GRID_DISTANCE_CUTOFF=4.0
-TARGET_RUN_DIR_REL="data/${PDB_CHAIN}/search_results"
+TARGET_RUN_DIR_REL="data/8RQC/search_results/8RQC_B_A"
 
 # --- Step 3: mimicry search ---
 DATABASE_DIR="/work/upthomae/Meng/TED_human_domainome_MaSIF/output"
@@ -49,7 +49,7 @@ HEAVY_ATOM_CLASH_THRESHOLD=5.0
 # DATABASE_CSV: domain metadata for iface aggregates + merge (filtered to postprocess P1_ids in memory)
 DATABASE_CSV="/work/upthomae/Meng/TED_human_domainome_MaSIF/output/filtered_intracellular_domainome/TED_human_domainome_info_intracellular.csv"
 POSTPROCESS_TARGET_PDB="${TARGET_RUN_DIR_REL}/8RQC_A.pdb"
-POSTPROCESS_OUT_DIR="data/${PDB_CHAIN}/postprocess"
+POSTPROCESS_OUT_DIR="data/8RQC/postprocess"
 POSTPROCESS_CSV_BASE="subset"
 
 # --- Derived (do not edit unless needed) ---

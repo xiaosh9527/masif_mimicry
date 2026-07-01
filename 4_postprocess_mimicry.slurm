@@ -52,6 +52,9 @@ python -u -m masif_mimicry.postprocess \
   --ligand "${LIGAND}" \
   --database_info_csv "${DATABASE_CSV}" \
   --subset "${DATABASE_SUBSET_DIR}/${SLURM_ARRAY_TASK_ID}" \
-  -o "${POSTPROCESS_OUT_BASENAME}_${SLURM_ARRAY_TASK_ID}.csv"
+  --p2_id "${PDB_CHAIN}" \
+  --target_ppi_id "${TARGET_PPI_ID}" \
+  -o "${POSTPROCESS_OUT_BASENAME}_${SLURM_ARRAY_TASK_ID}.csv" \
+  --cluster_method "medoid"
 
 echo "Post-processing completed: ${POSTPROCESS_OUT_BASENAME}_${SLURM_ARRAY_TASK_ID}.csv"

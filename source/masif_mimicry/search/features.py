@@ -19,8 +19,8 @@ else:
     ICPConvergenceCriteria = o3d.ICPConvergenceCriteria
 
 
-def get_features(params: dict, pdb: str, pid: str, source: bool = True, flip_desc: bool = False) -> dict:
-    """Load MaSIF features for a PDB id and p1/p2 side."""
+def feature_paths(params: dict, pdb: str, pid: str, source: bool = True, flip_desc: bool = False) -> dict:
+    """Return paths to all MaSIF feature files for a PDB id and p1/p2 side."""
     if pid == "p1":
         P = pdb.split("_")[0] + "_" + pdb.split("_")[1]
     else:
@@ -43,15 +43,35 @@ def get_features(params: dict, pdb: str, pid: str, source: bool = True, flip_des
 
     return dict(
         pdb=pdb_fn,
-        mesh=read_triangle_mesh(ply),
-        pcd=read_point_cloud(ply),
-        rho=np.load(rho_fn),
-        theta=np.load(theta_fn),
-        desc=np.load(desc_fn),
-        input_feat=np.load(input_feat_fn),
-        indices=np.load(indices_fn, allow_pickle=True),
-        iface=np.load(iface_fn),
-        ilabel=np.load(ilabel_fn),
+        ply=ply,
+        input_feat=input_feat_fn,
+        indices=indices_fn,
+        rho=rho_fn,
+        theta=theta_fn,
+        ilabel=ilabel_fn,
+        iface=iface_fn,
+        desc=desc_fn,
+    )
+
+
+def get_features(params: dict, pdb: str, pid: str, source: bool = True, flip_desc: bool = False) -> dict:
+    """Load MaSIF features for a PDB id and p1/p2 side."""
+    paths = feature_paths(params, pdb, pid, source=source, flip_desc=flip_desc)
+    for path in paths.values():
+        if not os.path.isfile(path):
+            raise FileNotFoundError(path)
+
+    return dict(
+        pdb=paths["pdb"],
+        mesh=read_triangle_mesh(paths["ply"]),
+        pcd=read_point_cloud(paths["ply"]),
+        rho=np.load(paths["rho"]),
+        theta=np.load(paths["theta"]),
+        desc=np.load(paths["desc"]),
+        input_feat=np.load(paths["input_feat"]),
+        indices=np.load(paths["indices"], allow_pickle=True),
+        iface=np.load(paths["iface"]),
+        ilabel=np.load(paths["ilabel"]),
     )
 
 

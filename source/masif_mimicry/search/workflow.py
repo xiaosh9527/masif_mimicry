@@ -294,7 +294,11 @@ def run_search(args):
             raise ValueError("Invalid format. Please use PDB_X or PDB_X_X")
 
         for ppi_id in ppi_id_list:
-            P1_all_feats = get_features(params, P1, ppi_id, source=True, flip_desc=False)
+            try:
+                P1_all_feats = get_features(params, P1, ppi_id, source=True, flip_desc=False)
+            except FileNotFoundError as e:
+                log(f"WARNING: Skipping {P1} ({ppi_id}): missing MaSIF files ({e})")
+                continue
             P1_selected_points_idx, P1_patch_descs, _ = select_patches(
                 P1_all_feats,
                 downsample_rate=args.downsample,

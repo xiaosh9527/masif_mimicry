@@ -1,6 +1,6 @@
 ## _MaSIF-mimicry_ 
 
-This repository contains code to perform the experiments in _Mapping the latent CRBN-molecular glue degrader interactome_
+This repository contains code to perform the experiments in [_Proteome-wide identification of the druggable CRBN interactome_](https://www.nature.com/articles/s41587-026-03237-7)
 
 ### Pipeline overview
 ![MaSIF-mimicry overview and pipeline](img/masif_mimicry.jpg)
@@ -10,7 +10,7 @@ This repository contains code to perform the experiments in _Mapping the latent 
   - [Hardware requirements](#hardware-requirements)
   - [Software requirements](#software-requirements)
 - [Installation](#installation)
-- [Step-by-step example with Docker](#step-by-step-example-with-docker)
+- [Step-by-step example](#step-by-step-example)
 - [Configuring parameters](#configuring-parameters)
 - [License](#license)
 - [Reference](#reference)

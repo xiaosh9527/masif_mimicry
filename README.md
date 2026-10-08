@@ -1,127 +1,236 @@
-## _MaSIF-mimicry_ 
+# MaSIF-mimicry
 
-This repository contains code to perform the experiments in [_Proteome-wide identification of the druggable CRBN interactome_](https://www.nature.com/articles/s41587-026-03237-7)
+MaSIF-mimicry searches protein surfaces for patches that resemble a target interface. This repository contains the workflow used for the experiments in [*Proteome-wide identification of the druggable CRBN interactome*](https://www.nature.com/articles/s41587-026-03237-7).
 
-### Pipeline overview
 ![MaSIF-mimicry overview and pipeline](img/masif_mimicry.jpg)
 
-## Table of Contents: 
-- [System requirements](#system-requirements)
-  - [Hardware requirements](#hardware-requirements)
-  - [Software requirements](#software-requirements)
-- [Installation](#installation)
-- [Step-by-step example](#step-by-step-example)
-- [Configuring parameters](#configuring-parameters)
-- [License](#license)
-- [Reference](#reference)
+> [!IMPORTANT]
+> MaSIF-mimicry currently depends on the MaSIF and MaSIF-seed research environments and has been tested on x86 Linux. Run `masif-mimicry doctor job.yaml` before starting a long job. Also verify that your downloaded neural-network checkpoint is finite; see the open [checkpoint reproducibility report](https://github.com/xiaosh9527/masif_mimicry/issues/3).
 
-## System requirements
+## Quick start
 
-### Hardware requirements
+Clone this repository beside the two upstream projects:
 
-MaSIF-seed has been tested on Linux, and it is recommended to run on an x86-based Linux Docker container. 
-
-Currently, MaSIF takes a few seconds to preprocess every protein. We find the main bottleneck is the APBS computation of surface charges, which can likely be optimized. Nevertheless, we recommend a distributed CPU cluster for preprocessing large protein datasets.
-
-### Software requirements
-
-MaSIF relies on external software/libraries to handle protein databank files and surface files, 
-to compute chemical/geometric features and coordinates, and to perform neural network calculations. 
-These dependencies have been installed in an Apptainer image. 
-The pipeline also requires additional packages for performing the postprocessing _bonsai_ workflow. 
-An environment.yml file is provided to create a conda environment that is independent from the MaSIF env.
-Below, we give an example of how to install these separately in an Apptainer image. 
-
-## Installation
-
-MaSIF-mimicry has been tested on Linux. To run the mimicry pipeline, first clone the official MaSIF-mimicry repository and then clone this repository inside it. 
-
-MaSIF is written in Python and does not require compilation. Since MaSIF relies on a few external programs (MSMS, APBS) and libraries (PyMesh, TensorFlow, SciPy, Open3D), we strongly recommend that you use the Dockerfile and Docker container. Setting up the environment should take only a few minutes.
+```text
+masif_seed/
+├── masif/
+├── masif_seed_search/
+└── masif_mimicry/
 ```
-git clone https://github.com/LPDI-EPFL/masif_seed.git
-cd masif_seed
-git clone https://github.com/xiaosh9527/masif_mimicry.git
+
+Build the single runtime image:
+
+```bash
 cd masif_mimicry
+docker build --platform linux/amd64 -t masif-mimicry .
 ```
 
-We use Apptainer/Singularity on an HPC system. Apptainer image is created as follows:
+The image contains two deliberately isolated interpreters—native Python 3.6
+for MaSIF and Conda Python 3.11 for bonsai and the CLI. No host Python
+environment or post-build Conda installation is required.
 
-```
-apptainer pull masif_mimicry.sif docker://shxiao/masif_mimicry:latest
-```
+For Apptainer, build from the Docker image or publish the image and pull it:
 
-## Step-by-step example
-We provide an example of searching for surface patches in P42345 (mTOR) that mimic the 6h0g_C (ZNF692) degron interface.
-We first divide proteins in DB (i.e., P42345) into structured domains, and use MaSIF to process these domains as well as the target protein, chain C of 6h0g ZNF692. Explanation for each step is detailed in the Slurm file. 
-```
-sbatch preprocess_pdb_apptainer.slurm
+```bash
+apptainer build masif_mimicry.sif docker-daemon://masif-mimicry:latest
 ```
 
-Once both the DB and target protein are processed, run the script to search for a surface patch in mTOR that mimics the ZNF692 degron interface. 
+Create an experiment:
 
-```
-cd ./data/template
-sbatch run.slurm
-```
-
-Before proceeding to the postprocessing step (_bonsai_), we create a conda env for the required dependencies (EvoEF2, Stride, DeepTMHMM) in the Apptainer image. 
-This is to ensure all dependencies are correctly installed and configured as a separate environment from the MaSIF environment.
-```
-cd ../../scripts/bonsai_scripts/
-bash ./slurm/conda.sh
+```bash
+apptainer exec masif_mimicry.sif masif-mimicry init my-screen
+cd my-screen
 ```
 
-Ideally, one should collect all hits from the DB and create a directory that contains PDBs of the best poses. Here, we use the raw pose output from the P42345 (mTOR) vs 6h0g_C (ZNF692) search. 
-Finally, we run the postprocessing script to truncate the hits and compute metrics. 
+Put the target PDB in `inputs/`, edit the generated `job.yaml`, and validate the setup:
 
-```
-bash postprocessing_truncation_workflow_apptainer.sh
-```
-
-By default, the output metrics are stored in the `Truncate_86/proc_truncated_scores.csv` file inside the defined output directory, and all the truncated PDBs are stored in the `Truncate_86/truncate` directory.
-
-## Configuring parameters
-
-Some parameters may improve your search:
-
-The main criterion for speed is the 'descriptor distance cutoff'. This cutoff determines which fingerprints are further considered and which are completely discarded. The lower the value, the faster the search (and the higher the number of false negatives):
-```
-# Score cutoffs -- these are empirical values; if they are too loose, then you get a lot of results.
-# Descriptor distance cutoff for the patch. All scores below this value are accepted for further processing.
-desc_dist_cutoff = 1.5 # Recommended values: [1.5-2.0] (lower is stricter)
+```bash
+apptainer exec --bind /path/to/masif_seed:/workspace masif_mimicry.sif \
+  masif-mimicry validate job.yaml
+apptainer exec --bind /path/to/masif_seed:/workspace masif_mimicry.sif \
+  masif-mimicry doctor job.yaml
+apptainer exec --bind /path/to/masif_seed:/workspace masif_mimicry.sif \
+  masif-mimicry plan job.yaml
 ```
 
-Another significant cutoff value is the interface cutoff. All patches are scored due to their interface propensity. One can assume that during the search, we want to find peptides with a high interface cutoff. You can lower this value to increase the number of candidates:
+Validate downloaded TensorFlow weights from inside the MaSIF environment before a large run:
 
-```
-# Interface cutoff value: all patches with a score below this value are discarded. For the degron interface, as MaSIF has not been trained with ternary complexes, we recommend an iface cutoff at 0.0
-iface_cutoff = 0.0 # Recommended values: [0.0-0.95] range (higher is stricter)
-```
-
-Finally, for the normalized desc_dist_score (i.e., MaSIF mimicry score), we recommend a cut-off at 0.4:
-
-```
-# MaSIF mimicry score cutoff - Discard anything below this score
-desc_dist_score_cutoff = 0.4 # Recommended values: [0.35-0.5] (higher is stricter)
+```bash
+apptainer exec --bind /path/to/masif_seed:/workspace masif_mimicry.sif \
+  masif-mimicry checkpoint /workspace/masif/data/.../model
 ```
 
-The number of sites to target in the protein (generally 1 should be fine):
+Generate and run the workflow:
 
-```
-# Number of sites to target in the protein
-num_sites = 10
-```
-
-Due to the large size of the proteome dataset, it is possible to perform searches with downsampling and select every k patches:
-
-```
-# Downsampling every 3 patches
-downsample = 3
+```bash
+apptainer exec --bind /path/to/masif_seed:/workspace masif_mimicry.sif \
+  masif-mimicry run job.yaml
 ```
 
-## License
+For Slurm, the default is intentionally safe: it creates and validates `submit.slurm` without submitting it. Review the file, then either run `sbatch` yourself or set `runtime.submit: true`.
 
-MaSIF-mimicry is released under an [Apache v2.0 license](LICENSE).
+Inspect progress and create a browser-readable report:
 
-## Reference
-If you use this code, please use the bibtex entry in [citation.bib](citation.bib)
+```bash
+masif-mimicry status runs/znf692-vs-mtor
+masif-mimicry results runs/znf692-vs-mtor --open
+```
+
+The form-based browser interface is also installed in the image:
+
+```bash
+apptainer exec --bind /path/to/masif_seed:/workspace masif_mimicry.sif \
+  masif-mimicry ui
+```
+
+For development outside the image, the lightweight CLI can still be installed
+on the host. This is optional and is not part of the production runtime:
+
+```bash
+python -m pip install -e '.[dev]'
+```
+
+## One configuration file
+
+The interface replaces editable shell scripts with a validated YAML job:
+
+```yaml
+name: znf692-vs-mtor
+
+target:
+  structure: inputs/6h0g.pdb
+  pdb_id: 6h0g
+  query_chain: C
+  receptor_chain: B
+  focus: {residue: 423, atom: CA}
+  ligand: B:Y70
+
+database:
+  name: masif_human_proteome
+  proteins: [P42345-F1-dom-01_A]
+
+search:
+  preset: balanced
+  count_clashes: true
+
+postprocessing:
+  enabled: true
+  truncation_length: 86
+
+runtime:
+  backend: local
+  suite_root: /workspace
+  submit: false
+  slurm:
+    cpus: 4
+    memory: 24G
+    time: "24:00:00"
+
+output_root: runs
+```
+
+Paths are resolved relative to the YAML file. When the CLI runs inside the
+container, use `backend: local` and `/workspace` as `suite_root`. The local
+backend means “already inside the image”; it does not combine the two Python
+environments.
+
+## Python compatibility
+
+The image has exactly two Python runtimes:
+
+| Path | Version | Used for |
+| --- | --- | --- |
+| `/usr/local/bin/masif-python` | 3.6 | Surface preparation, TensorFlow 1.12, MaSIF search |
+| `/opt/conda/envs/bonsai/bin/python` | 3.11 | CLI, RDKit, postprocessing, EvoEF2 orchestration |
+
+Generated workflows call these absolute paths. They never run `conda activate`,
+and Miniconda is deliberately not added to the global `PATH`. Environment
+variables `MASIF_PYTHON` and `BONSAI_PYTHON` provide equivalent explicit paths
+for the legacy scripts.
+
+## Search presets
+
+| Preset | Downsample | Descriptor cutoff | Mimicry-score cutoff | Intended use |
+| --- | ---: | ---: | ---: | --- |
+| `fast` | 5 | 1.5 | 0.45 | Quick exploratory screen |
+| `balanced` | 3 | 2.0 | 0.40 | Recommended starting point |
+| `sensitive` | 1 | 2.0 | 0.35 | More candidates and more computation |
+
+Individual values can override a preset:
+
+```yaml
+search:
+  preset: balanced
+  downsample: 2
+  descriptor_distance_cutoff: 1.8
+  mimicry_score_cutoff: 0.42
+```
+
+## Runtime backends
+
+- `local` runs directly in the current environment and is the normal choice when the CLI is already running inside the image.
+- `apptainer` runs the workflow in the configured image and mounts the suite at `/workspace`.
+- `slurm` generates a reproducible Slurm submission script which runs the Apptainer backend.
+
+Large databases are expected to be preprocessed. Each value in `database.proteins` is a processed MaSIF identifier such as `P42345-F1-dom-01_A`.
+
+Target preprocessing is cached globally under
+`masif_mimicry/data/target/targets/<processed-id>`. A later run using the same
+processed target ID reuses its surface features and descriptors. Each run only
+contains a symlink at `data/target`, keeping older status and inspection tools
+compatible without copying the target data. To deliberately rebuild a target,
+delete its directory from the shared cache before starting the run.
+
+## Run directory
+
+Every experiment has a predictable structure:
+
+```text
+runs/<name>/
+├── run.yaml             # fully resolved configuration
+├── provenance.json      # interface, host, time, and backend
+├── run.sh|submit.slurm  # generated execution script
+├── inputs/
+├── data/target -> shared target cache
+├── results/
+├── postprocess/
+├── truncate-86/
+├── logs/
+└── report.html
+```
+
+The generated `run.yaml`, execution script, and provenance file should be archived with published results.
+
+## Existing installations
+
+The original scripts remain available for compatibility:
+
+- `preprocess_pdb.sh` preprocesses an individual PDB.
+- `source/masif_mimicry_search.py` runs the core search.
+- `scripts/bonsai_scripts/` contains postprocessing and truncation algorithms.
+- `data/template/run.slurm` is the original worked example.
+
+New experiments should use the `masif-mimicry` command so parameters, paths, and outputs are recorded consistently.
+
+## Development
+
+```bash
+python -m pip install -e '.[dev]'
+pytest
+ruff check src tests
+```
+
+The interface tests do not run the multi-gigabyte scientific pipeline. They validate configuration, parameter presets, path translation, generated execution scripts, and run metadata.
+
+## Hardware and dependencies
+
+Surface preprocessing invokes external tools including MSMS, APBS, PDB2PQR,
+Reduce, and USalign. Search uses the image's native Python 3.6 environment.
+Bonsai uses the embedded Conda Python 3.11 environment together with EvoEF2,
+STRIDE, and the bundled DeepTMHMM predictions.
+
+APBS surface-charge calculation is the main preprocessing bottleneck. A distributed CPU cluster is recommended for proteome-scale preprocessing; a single prepared protein can be used for the included example.
+
+## License and citation
+
+MaSIF-mimicry is released under the Apache License 2.0. If you use it, cite [*Proteome-wide identification of the druggable CRBN interactome*](https://www.nature.com/articles/s41587-026-03237-7).

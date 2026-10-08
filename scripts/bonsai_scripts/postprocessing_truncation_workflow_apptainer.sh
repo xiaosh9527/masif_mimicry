@@ -25,8 +25,8 @@ apptainer exec \
   --env TRUNC_LENGTH=$TRUNC_LENGTH \
   --pwd /workspace \
   "$IMAGE" /bin/bash -c '
-    source /workspace/miniconda/etc/profile.d/conda.sh
-    conda activate bonsai
+    BONSAI_PYTHON=${BONSAI_PYTHON:-/opt/conda/envs/bonsai/bin/python}
+    test -x "$BONSAI_PYTHON" || { echo "Bonsai Python not found: $BONSAI_PYTHON" >&2; exit 1; }
 
     ### Data paths:
     ROOT=/workspace/masif_mimicry                                             # Root directory
@@ -49,14 +49,14 @@ apptainer exec \
     pdb_paths=$(cat ${postprocess_pdb_paths})
 
     # Run postprocessing and truncation steps
-    python $bonsai_scripts_dir/python/postprocess_masif_mimicry.py \
+    "$BONSAI_PYTHON" $bonsai_scripts_dir/python/postprocess_masif_mimicry.py \
       --pdb_paths $pdb_paths \
       -o $POSTPROCESS_DIR/postprocessed_scores.csv \
       --ligand $LIGAND \
       --target_pdb_path $TARGET_PDB_PATH
 
     # Truncation and rescoring
-    python $bonsai_scripts_dir/python/EvoEF2_truncate.py \
+    "$BONSAI_PYTHON" $bonsai_scripts_dir/python/EvoEF2_truncate.py \
       --clean \
       --input_csv $POSTPROCESS_DIR/postprocessed_scores.csv \
       --length $TRUNC_LENGTH \
@@ -64,7 +64,7 @@ apptainer exec \
       --temp_dir $TRUNC_DIR/truncate/temp
 
     # Re-calculate postprocessing metrics on truncated structures
-    python $bonsai_scripts_dir/python/proc_trunc_masif_mimicry.py \
+    "$BONSAI_PYTHON" $bonsai_scripts_dir/python/proc_trunc_masif_mimicry.py \
       --input $POSTPROCESS_DIR/postprocessed_scores_truncated_results.csv \
       -o $TRUNC_DIR/proc_truncated_scores.csv \
       --ligand $LIGAND

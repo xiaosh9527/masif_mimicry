@@ -25,7 +25,7 @@ apptainer exec \
 
     export PYTHONPATH="$PYTHONPATH:$masif_db_source:$masif_seed_source:$masif_mimicry_source:$PWD"
 
-    python -u "$masif_mimicry_source/masif_mimicry_search.py" \
+    "${MASIF_PYTHON:-/usr/local/bin/masif-python}" -u "$masif_mimicry_source/masif_mimicry_search.py" \
       --seed_db_root "$masif_db_root" \
       --seed_db masif_human_proteome \
       --target_db_root "$masif_mimicry_root" \

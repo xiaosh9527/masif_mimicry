@@ -1,38 +1,15 @@
-#!/bin/bash -l
+#!/usr/bin/env bash
+set -euo pipefail
 
-masif_root=/scratch/shxiao/masif_seed/
-IMAGE=$masif_root/masif_mimicry/masif_mimicry.sif
+# Kept for old submission scripts. The image already contains the bonsai
+# Conda environment, so no runtime download or activation is necessary.
+BONSAI_PYTHON=${BONSAI_PYTHON:-/opt/conda/envs/bonsai/bin/python}
 
-apptainer exec \
-  --bind $masif_root:/workspace \
-  --pwd /workspace \
-  $IMAGE /bin/bash -c '  
-    cd /workspace
-    curl -fsSL -o Miniconda3.sh "https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh" && \
-    bash Miniconda3.sh -p /workspace/miniconda -b && \
-    rm -f Miniconda3.sh
+if [[ ! -x "$BONSAI_PYTHON" ]]; then
+  echo "Bonsai Python not found: $BONSAI_PYTHON" >&2
+  echo "Rebuild the MaSIF-mimicry image instead of installing Conda at job runtime." >&2
+  exit 1
+fi
 
-    cd /workspace/masif_mimicry/scripts/bonsai_scripts/
-    source /workspace/miniconda/etc/profile.d/conda.sh
-    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
-    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
-    conda env create -y -n bonsai --file environment.yml
-    
-    cd /workspace
-    conda activate bonsai
-    if [ ! -d "/workspace/EvoEF2" ]; then
-        git clone https://github.com/tommyhuangthu/EvoEF2.git
-    fi
-    cd /workspace/EvoEF2
-    chmod +x ./build.sh
-    bash ./build.sh
-
-    cd /workspace
-    mkdir -p stride
-    cd stride
-    tar -xzf /workspace/masif_mimicry/scripts/bonsai_scripts/src/stride.tar.gz
-    make
-
-    cd /workspace
-    tar -xzf /workspace/masif_mimicry/scripts/bonsai_scripts/src/deepTMHMM.tar.gz
-'
+"$BONSAI_PYTHON" -c 'import sys; assert sys.version_info[:2] == (3, 11)'
+echo "Bonsai runtime ready: $BONSAI_PYTHON"

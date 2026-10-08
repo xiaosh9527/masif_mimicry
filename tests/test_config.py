@@ -1,0 +1,51 @@
+from pathlib import Path
+
+import pytest
+from pydantic import ValidationError
+
+from masif_mimicry.config import JobConfig, Search, SearchPreset
+
+
+@pytest.mark.parametrize(
+    ("preset", "downsample"),
+    [(SearchPreset.fast, 5), (SearchPreset.balanced, 3), (SearchPreset.sensitive, 1)],
+)
+def test_search_presets(preset: SearchPreset, downsample: int):
+    assert Search(preset=preset).resolved()["downsample"] == downsample
+
+
+def test_search_override_wins():
+    assert Search(preset="fast", downsample=2).resolved()["downsample"] == 2
+
+
+def test_target_processed_id():
+    job = JobConfig.model_validate(
+        {
+            "name": "test",
+            "target": {
+                "structure": "/workspace/target.pdb",
+                "pdb_id": "1abc",
+                "query_chain": "A",
+                "receptor_chain": "B",
+            },
+            "database": {"proteins": ["seed_A"]},
+            "runtime": {"backend": "local", "suite_root": "/workspace"},
+        }
+    )
+    assert job.target.processed_id == "1abc_A_B"
+
+
+def test_container_paths_must_be_below_suite_root(tmp_path: Path):
+    with pytest.raises(ValidationError, match="must be below"):
+        JobConfig.model_validate(
+            {
+                "name": "test",
+                "target": {"structure": "/outside/target.pdb", "query_chain": "A"},
+                "database": {"proteins": ["seed_A"]},
+                "runtime": {
+                    "backend": "apptainer",
+                    "suite_root": str(tmp_path),
+                    "image": str(tmp_path / "image.sif"),
+                },
+            }
+        )

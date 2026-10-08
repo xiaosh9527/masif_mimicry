@@ -1,4 +1,4 @@
-import os, sys, glob, shutil, pickle, csv, argparse, copy
+import os, sys, glob, shutil, pickle, csv, argparse, copy, tempfile
 import numpy as np
 import pandas as pd
 
@@ -51,7 +51,7 @@ def create_parser():
 
 def main(args):
     P2 = args.target_pdb
-    local_tmp_dir = os.getenv('TMPDIR')    
+    local_tmp_dir = os.getenv('TMPDIR', tempfile.gettempdir())
     
     if args.target_ppi_id not in ['p1', 'p2']:
         print('Please specify target_ppi_id as either p1 or p2')

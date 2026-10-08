@@ -9,3 +9,10 @@ data/template/logs/*
 data/template/targets/*
 data/template/results/*
 data/template/tmp/*
+runs/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.DS_Store

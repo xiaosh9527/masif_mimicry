@@ -1,4 +1,4 @@
-import os, subprocess, requests, argparse
+import os, subprocess, requests, argparse, sys
 
 import pandas as pd
 import numpy as np
@@ -215,7 +215,7 @@ def main(uniprot_id: str = 'P0DTC2', pae_cutoff: float = 15.0):
     pae_file = os.path.join(PAE_FOLDER, f'AF-{uniprot_id}-F1-predicted_aligned_error_{AF_DB_VERSION}.json')
     tmp_file = os.path.join(TMP_FOLDER, f'AF-{uniprot_id}-F1-predicted_aligned_clusters.csv')
 
-    subprocess.run(['python', PATH_PAE_TO_DOMAINS_SCRIPT, pae_file, '--pae_cutoff', str(pae_cutoff), '--output_file', tmp_file])
+    subprocess.run([sys.executable, PATH_PAE_TO_DOMAINS_SCRIPT, pae_file, '--pae_cutoff', str(pae_cutoff), '--output_file', tmp_file])
 
     df_clust = pd.read_csv(tmp_file, header=None)
     list_of_clust = df_clust.apply(lambda row: row_to_list(row), axis=1)

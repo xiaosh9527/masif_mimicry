@@ -1,4 +1,4 @@
 paths:
-  deeptmhmm_dir: "/workspace/deepTMHMM/out/" # path to pre-computed DeepTMHMM prediction on the DATA library
-  stride_exec: "/workspace/stride/stride" # Path to stride executable (relative to repo root)
-  EvoEF2_dir: "/workspace/EvoEF2" # Path to EvoEF2 installation directory (relative to repo root)
+  deeptmhmm_dir: "/opt/deepTMHMM/out" # pre-computed DeepTMHMM predictions
+  stride_exec: "/opt/stride/stride" # STRIDE executable bundled in the image
+  EvoEF2_dir: "/opt/EvoEF2" # EvoEF2 installation bundled in the image

@@ -5,11 +5,27 @@ MaSIF-mimicry searches protein surfaces for patches that resemble a target inter
 ![MaSIF-mimicry overview and pipeline](img/masif_mimicry.jpg)
 
 > [!IMPORTANT]
-> MaSIF-mimicry currently depends on the MaSIF and MaSIF-seed research environments and has been tested on x86 Linux. Run `masif-mimicry doctor job.yaml` before starting a long job. Also verify that your downloaded neural-network checkpoint is finite; see the open [checkpoint reproducibility report](https://github.com/xiaosh9527/masif_mimicry/issues/3).
+> MaSIF-mimicry depends on the MaSIF and MaSIF-seed-search code, but these
+> are **not two separately cloned upstream repositories**. Both directories
+> are included in the single upstream
+> [`LPDI-EPFL/masif_seed`](https://github.com/LPDI-EPFL/masif_seed.git)
+> repository. MaSIF-mimicry has been tested on x86 Linux. Run
+> `masif-mimicry doctor job.yaml` before starting a long job. Also verify that
+> your downloaded neural-network checkpoint is finite; see the open
+> [checkpoint reproducibility report](https://github.com/xiaosh9527/masif_mimicry/issues/3).
 
 ## Quick start
 
-Clone this repository beside the two upstream projects:
+Clone the one upstream repository, then clone MaSIF-mimicry inside it:
+
+```bash
+cd ~/Documents
+git clone https://github.com/LPDI-EPFL/masif_seed.git
+cd masif_seed
+git clone https://github.com/xiaosh9527/masif_mimicry.git
+```
+
+The resulting layout must be:
 
 ```text
 masif_seed/
@@ -173,6 +189,147 @@ search:
 - `slurm` generates a reproducible Slurm submission script which runs the Apptainer backend.
 
 Large databases are expected to be preprocessed. Each value in `database.proteins` is a processed MaSIF identifier such as `P42345-F1-dom-01_A`.
+
+## Constructing the human-proteome seed database
+
+The human-proteome seed database is generated data; it is not a second
+upstream repository and it is not included in this repository. Its default
+location is inside the upstream checkout, parallel to MaSIF's other datasets:
+
+```text
+masif_seed/
+├── masif/
+│   └── data/
+│       └── masif_human_proteome/   # generated seed database
+├── masif_seed_search/
+└── masif_mimicry/
+```
+
+This matches the default YAML setting:
+
+```yaml
+database:
+  name: masif_human_proteome
+```
+
+With `runtime.suite_root: /workspace`, the container resolves that database to
+`/workspace/masif/data/masif_human_proteome`. On the host, following the quick
+start above, that is
+`~/Documents/masif_seed/masif/data/masif_human_proteome`.
+
+### 1. Create the database and install the domain splitter
+
+Run this on the host from the `masif_seed` directory:
+
+```bash
+cd ~/Documents/masif_seed
+mkdir -p masif/data/masif_human_proteome
+git clone https://github.com/tristanic/pae_to_domains.git \
+  masif/data/masif_human_proteome/pae_to_domains
+```
+
+### 2. Split AlphaFold models into domains
+
+Create `masif/data/masif_human_proteome/human-uniprot-ids.txt` with one human
+UniProt accession per line. For the current UniProt human reference proteome
+(`UP000005640`), the accession column can be downloaded with:
+
+```bash
+curl -L \
+  'https://rest.uniprot.org/uniprotkb/stream?compressed=false&format=tsv&fields=accession&query=proteome%3AUP000005640' \
+  | tail -n +2 \
+  > masif/data/masif_human_proteome/human-uniprot-ids.txt
+```
+
+UniProt and AlphaFold DB releases evolve independently, so retain this input
+list with the resulting database and review any accessions for which AlphaFold
+downloads fail. A one-protein smoke test can instead use mTOR:
+
+```text
+P42345
+```
+
+The following command downloads each AlphaFold model and its predicted aligned
+error (PAE), splits it at the configured 15 Å PAE cutoff, removes low-confidence
+terminal loops, and writes domain PDBs under `input/fragments/`:
+
+```bash
+cd ~/Documents/masif_seed
+docker run --rm --platform linux/amd64 \
+  -v "$PWD:/workspace" \
+  -w /workspace/masif/data/masif_human_proteome \
+  masif-mimicry bash -lc '
+    set -euo pipefail
+    while IFS= read -r uniprot_id; do
+      [[ -z "$uniprot_id" || "$uniprot_id" == \#* ]] && continue
+      bash /workspace/masif_mimicry/scripts/process_af_model.sh "$uniprot_id"
+    done < human-uniprot-ids.txt
+  '
+```
+
+`scripts/domain_split.py` currently downloads AlphaFold Database version 6.
+The published study used version 4. For exact paper reproduction, download the
+[AlphaFold human-proteome v4 archive](https://ftp.ebi.ac.uk/pub/databases/alphafold/v4/UP000005640_9606_HUMAN_v4.tar)
+and adapt the input stage to use those archived structures and PAE files rather
+than the current per-accession downloader. The current downloader requests only
+the `F1` model for each accession. AlphaFold supplies additional `F2`, `F3`, and
+later overlapping models for some very long human proteins; import those
+fragments separately if the database must cover their full sequences.
+
+### 3. Build MaSIF surfaces, predictions, and descriptors
+
+First test one generated domain:
+
+```bash
+cd ~/Documents/masif_seed
+docker run --rm --platform linux/amd64 \
+  -v "$PWD:/workspace" \
+  -w /workspace/masif/data/masif_human_proteome \
+  masif-mimicry bash /workspace/masif_mimicry/preprocess_pdb.sh \
+    input/fragments/P42345-F1-dom-01.pdb \
+    P42345-F1-dom-01_A \
+    -o /workspace/masif/data/masif_human_proteome
+```
+
+AlphaFold models use chain `A`, so the processed identifier is the fragment
+name plus `_A`. Use exactly that identifier in `database.proteins`.
+
+After the smoke test succeeds, process every generated domain sequentially:
+
+```bash
+cd ~/Documents/masif_seed
+docker run --rm --platform linux/amd64 \
+  -v "$PWD:/workspace" \
+  -w /workspace/masif/data/masif_human_proteome \
+  masif-mimicry bash -lc '
+    set -euo pipefail
+    for fragment in input/fragments/*.pdb; do
+      fragment_id=${fragment##*/}
+      fragment_id=${fragment_id%.pdb}
+      bash /workspace/masif_mimicry/preprocess_pdb.sh \
+        "$fragment" "${fragment_id}_A" \
+        -o /workspace/masif/data/masif_human_proteome
+    done
+  '
+```
+
+For each domain, `preprocess_pdb.sh` triangulates the surface, computes the
+MaSIF-site and MaSIF-search inputs, predicts interface scores, and computes the
+surface descriptors used by the mimicry search. The complete human proteome
+requires several terabytes and should be split into parallel cluster or Slurm
+array jobs rather than processed with the sequential loop above. Do not run two
+jobs for the same fragment at the same time.
+
+When construction is complete, list the processed identifiers you want to
+search in the job file:
+
+```yaml
+database:
+  name: masif_human_proteome
+  proteins:
+    - P42345-F1-dom-01_A
+    - P42345-F1-dom-02_A
+```
 
 Target preprocessing is cached globally under
 `masif_mimicry/data/target/targets/<processed-id>`. A later run using the same

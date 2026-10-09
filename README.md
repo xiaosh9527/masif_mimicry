@@ -14,16 +14,24 @@ MaSIF-mimicry searches protein surfaces for patches that resemble a target inter
 > your downloaded neural-network checkpoint is finite; see the open
 > [checkpoint reproducibility report](https://github.com/xiaosh9527/masif_mimicry/issues/3).
 
-## Quick start
+## Portable quick start
 
-Clone the one upstream repository, then clone MaSIF-mimicry inside it:
+Choose any writable working directory. Clone the one upstream repository, then
+clone MaSIF-mimicry inside it:
 
 ```bash
-cd ~/Documents
 git clone https://github.com/LPDI-EPFL/masif_seed.git
 cd masif_seed
-git clone https://github.com/xiaosh9527/masif_mimicry.git
+git clone --branch v2.0 https://github.com/xiaosh9527/masif_mimicry.git
+
+export MASIF_SEED_ROOT="$(pwd -P)"
+export MIMICRY_IMAGE="$MASIF_SEED_ROOT/masif_mimicry/masif_mimicry.sif"
 ```
+
+`MASIF_SEED_ROOT` is derived from the checkout location, so the remaining
+commands do not assume a username, home directory, workstation path, or HPC
+filesystem layout. In a new shell, change into the `masif_seed` checkout and
+set the two variables again.
 
 The resulting layout must be:
 
@@ -34,70 +42,145 @@ masif_seed/
 └── masif_mimicry/
 ```
 
-Build the single runtime image:
+The container is Linux `amd64`; the host options are:
+
+| Host | Recommended runtime | Notes |
+| --- | --- | --- |
+| x86-64 Linux or HPC | Apptainer | Native and recommended |
+| Linux workstation | Docker or Apptainer | Docker is sufficient for local testing |
+| Intel macOS | Docker Desktop | Apptainer requires a Linux VM |
+| Apple Silicon macOS | Docker Desktop with `linux/amd64` emulation | Use x86-64 HPC for production runs |
+| Windows | Docker Desktop through WSL2 | Native Windows execution is not supported |
+
+### Apptainer
+
+Pull the published image to the checkout:
 
 ```bash
-cd masif_mimicry
-docker build --platform linux/amd64 -t masif-mimicry .
+apptainer pull "$MIMICRY_IMAGE" \
+  docker://ghcr.io/xiaosh9527/masif-mimicry:v2.0
 ```
 
 The image contains two deliberately isolated interpreters—native Python 3.6
 for MaSIF and Conda Python 3.11 for bonsai and the CLI. No host Python
 environment or post-build Conda installation is required.
 
-For Apptainer, build from the Docker image or publish the image and pull it:
+To build the image locally instead, build Docker first and convert a saved
+archive. The archive route works even when Apptainer cannot access Docker
+Desktop's daemon socket:
 
 ```bash
-apptainer build masif_mimicry.sif docker-daemon://masif-mimicry:latest
+docker build --platform linux/amd64 \
+  --tag masif-mimicry:latest \
+  "$MASIF_SEED_ROOT/masif_mimicry"
+docker image save \
+  --output "$MASIF_SEED_ROOT/masif_mimicry/masif-mimicry-docker.tar" \
+  masif-mimicry:latest
+apptainer build "$MIMICRY_IMAGE" \
+  "docker-archive:$MASIF_SEED_ROOT/masif_mimicry/masif-mimicry-docker.tar"
 ```
 
-Create an experiment:
+Verify the image and both Python runtimes:
 
 ```bash
-apptainer exec masif_mimicry.sif masif-mimicry init my-screen
-cd my-screen
+apptainer exec "$MIMICRY_IMAGE" masif-mimicry --version
+apptainer exec "$MIMICRY_IMAGE" /usr/local/bin/masif-python --version
+apptainer exec "$MIMICRY_IMAGE" \
+  /opt/conda/envs/bonsai/bin/python --version
 ```
 
-Put the target PDB in `inputs/`, edit the generated `job.yaml`, and validate the setup:
+Bind the complete `masif_seed` checkout to `/workspace` and check that all
+three source directories are visible:
 
 ```bash
-apptainer exec --bind /path/to/masif_seed:/workspace masif_mimicry.sif \
-  masif-mimicry validate job.yaml
-apptainer exec --bind /path/to/masif_seed:/workspace masif_mimicry.sif \
-  masif-mimicry doctor job.yaml
-apptainer exec --bind /path/to/masif_seed:/workspace masif_mimicry.sif \
-  masif-mimicry plan job.yaml
+apptainer exec --bind "$MASIF_SEED_ROOT:/workspace" "$MIMICRY_IMAGE" \
+  ls /workspace/masif /workspace/masif_seed_search /workspace/masif_mimicry
+
+apptainer exec --bind "$MASIF_SEED_ROOT:/workspace" "$MIMICRY_IMAGE" \
+  masif-mimicry doctor \
+  /workspace/masif_mimicry/examples/job.container.yaml
 ```
 
-Validate downloaded TensorFlow weights from inside the MaSIF environment before a large run:
+The SIF contains the software but not the human-proteome seed database. Before
+running the example, prepare at least `P42345-F1-dom-01_A` by following
+[Constructing the human-proteome seed database](#constructing-the-human-proteome-seed-database).
+
+Then validate and preview the included mTOR-versus-ZNF692 example:
 
 ```bash
-apptainer exec --bind /path/to/masif_seed:/workspace masif_mimicry.sif \
+apptainer exec --bind "$MASIF_SEED_ROOT:/workspace" "$MIMICRY_IMAGE" \
+  masif-mimicry validate \
+  /workspace/masif_mimicry/examples/job.container.yaml
+
+apptainer exec --bind "$MASIF_SEED_ROOT:/workspace" "$MIMICRY_IMAGE" \
+  masif-mimicry plan \
+  /workspace/masif_mimicry/examples/job.container.yaml
+```
+
+Run the example:
+
+```bash
+apptainer exec --bind "$MASIF_SEED_ROOT:/workspace" "$MIMICRY_IMAGE" \
+  masif-mimicry run \
+  /workspace/masif_mimicry/examples/job.container.yaml
+```
+
+Results are written to
+`$MASIF_SEED_ROOT/masif_mimicry/runs/znf692-vs-mtor/`. Inspect progress with:
+
+```bash
+apptainer exec --bind "$MASIF_SEED_ROOT:/workspace" "$MIMICRY_IMAGE" \
+  masif-mimicry status \
+  /workspace/masif_mimicry/runs/znf692-vs-mtor
+```
+
+To create a new experiment instead of using the included example:
+
+```bash
+apptainer exec --bind "$MASIF_SEED_ROOT:/workspace" "$MIMICRY_IMAGE" \
+  masif-mimicry init /workspace/masif_mimicry/my-screen
+```
+
+Put the target PDB in `masif_mimicry/my-screen/inputs/`, edit `job.yaml`, then
+repeat `validate`, `doctor`, `plan`, and `run` using its container path.
+
+Validate downloaded TensorFlow weights before a large run:
+
+```bash
+apptainer exec --bind "$MASIF_SEED_ROOT:/workspace" "$MIMICRY_IMAGE" \
   masif-mimicry checkpoint /workspace/masif/data/.../model
 ```
 
-Generate and run the workflow:
+For Slurm, the default is intentionally safe: it creates and validates
+`submit.slurm` without submitting it. Review the file, then either run `sbatch`
+yourself or set `runtime.submit: true`.
+
+### Docker workstation equivalent
+
+On a workstation without Apptainer, use the same published image directly with
+Docker. The complete checkout is mounted at the same `/workspace` path, so job
+files do not change between Docker and Apptainer:
 
 ```bash
-apptainer exec --bind /path/to/masif_seed:/workspace masif_mimicry.sif \
-  masif-mimicry run job.yaml
+docker pull --platform linux/amd64 \
+  ghcr.io/xiaosh9527/masif-mimicry:v2.0
+
+docker run --rm --platform linux/amd64 \
+  --volume "$MASIF_SEED_ROOT:/workspace" \
+  ghcr.io/xiaosh9527/masif-mimicry:v2.0 \
+  masif-mimicry doctor \
+  /workspace/masif_mimicry/examples/job.container.yaml
+
+docker run --rm --platform linux/amd64 \
+  --volume "$MASIF_SEED_ROOT:/workspace" \
+  ghcr.io/xiaosh9527/masif-mimicry:v2.0 \
+  masif-mimicry run \
+  /workspace/masif_mimicry/examples/job.container.yaml
 ```
 
-For Slurm, the default is intentionally safe: it creates and validates `submit.slurm` without submitting it. Review the file, then either run `sbatch` yourself or set `runtime.submit: true`.
-
-Inspect progress and create a browser-readable report:
-
-```bash
-masif-mimicry status runs/znf692-vs-mtor
-masif-mimicry results runs/znf692-vs-mtor --open
-```
-
-The form-based browser interface is also installed in the image:
-
-```bash
-apptainer exec --bind /path/to/masif_seed:/workspace masif_mimicry.sif \
-  masif-mimicry ui
-```
+Docker Desktop users must allow file sharing for the directory containing
+`MASIF_SEED_ROOT`. Outputs are written through the bind mount and remain on the
+host after the container exits.
 
 For development outside the image, the lightweight CLI can still be installed
 on the host. This is optional and is not part of the production runtime:
@@ -215,14 +298,29 @@ database:
 With `runtime.suite_root: /workspace`, the container resolves that database to
 `/workspace/masif/data/masif_human_proteome`. On the host, following the quick
 start above, that is
-`~/Documents/masif_seed/masif/data/masif_human_proteome`.
+`$MASIF_SEED_ROOT/masif/data/masif_human_proteome`.
+
+The construction examples below use Apptainer, which is the recommended
+proteome-scale runtime. On a Docker workstation, the equivalent container
+prefix is:
+
+```bash
+docker run --rm --platform linux/amd64 \
+  --volume "$MASIF_SEED_ROOT:/workspace" \
+  ghcr.io/xiaosh9527/masif-mimicry:v2.0
+```
+
+Append the same command and arguments shown after `"$MIMICRY_IMAGE"` in each
+Apptainer example. Because both runtimes mount the suite at `/workspace`, no
+job paths or configuration values need to change.
 
 ### 1. Create the database and install the domain splitter
 
 Run this on the host from the `masif_seed` directory:
 
 ```bash
-cd ~/Documents/masif_seed
+: "${MASIF_SEED_ROOT:?Set MASIF_SEED_ROOT as shown in Portable quick start}"
+cd "$MASIF_SEED_ROOT"
 mkdir -p masif/data/masif_human_proteome
 git clone https://github.com/tristanic/pae_to_domains.git \
   masif/data/masif_human_proteome/pae_to_domains
@@ -243,10 +341,11 @@ curl -L \
 
 UniProt and AlphaFold DB releases evolve independently, so retain this input
 list with the resulting database and review any accessions for which AlphaFold
-downloads fail. A one-protein smoke test can instead use mTOR:
+downloads fail. For a one-protein smoke test, create the list with only mTOR:
 
-```text
-P42345
+```bash
+printf 'P42345\n' \
+  > masif/data/masif_human_proteome/human-uniprot-ids.txt
 ```
 
 The following command downloads each AlphaFold model and its predicted aligned
@@ -254,11 +353,12 @@ error (PAE), splits it at the configured 15 Å PAE cutoff, removes low-confidenc
 terminal loops, and writes domain PDBs under `input/fragments/`:
 
 ```bash
-cd ~/Documents/masif_seed
-docker run --rm --platform linux/amd64 \
-  -v "$PWD:/workspace" \
-  -w /workspace/masif/data/masif_human_proteome \
-  masif-mimicry bash -lc '
+: "${MASIF_SEED_ROOT:?Set MASIF_SEED_ROOT as shown in Portable quick start}"
+: "${MIMICRY_IMAGE:?Set MIMICRY_IMAGE as shown in Portable quick start}"
+cd "$MASIF_SEED_ROOT"
+
+apptainer exec --bind "$MASIF_SEED_ROOT:/workspace" "$MIMICRY_IMAGE" bash -lc '
+    cd /workspace/masif/data/masif_human_proteome
     set -euo pipefail
     while IFS= read -r uniprot_id; do
       [[ -z "$uniprot_id" || "$uniprot_id" == \#* ]] && continue
@@ -281,14 +381,17 @@ fragments separately if the database must cover their full sequences.
 First test one generated domain:
 
 ```bash
-cd ~/Documents/masif_seed
-docker run --rm --platform linux/amd64 \
-  -v "$PWD:/workspace" \
-  -w /workspace/masif/data/masif_human_proteome \
-  masif-mimicry bash /workspace/masif_mimicry/preprocess_pdb.sh \
-    input/fragments/P42345-F1-dom-01.pdb \
-    P42345-F1-dom-01_A \
-    -o /workspace/masif/data/masif_human_proteome
+: "${MASIF_SEED_ROOT:?Set MASIF_SEED_ROOT as shown in Portable quick start}"
+: "${MIMICRY_IMAGE:?Set MIMICRY_IMAGE as shown in Portable quick start}"
+cd "$MASIF_SEED_ROOT"
+
+apptainer exec --bind "$MASIF_SEED_ROOT:/workspace" "$MIMICRY_IMAGE" bash -lc '
+    cd /workspace/masif/data/masif_human_proteome
+    bash /workspace/masif_mimicry/preprocess_pdb.sh \
+      input/fragments/P42345-F1-dom-01.pdb \
+      P42345-F1-dom-01_A \
+      -o /workspace/masif/data/masif_human_proteome
+  '
 ```
 
 AlphaFold models use chain `A`, so the processed identifier is the fragment
@@ -297,11 +400,12 @@ name plus `_A`. Use exactly that identifier in `database.proteins`.
 After the smoke test succeeds, process every generated domain sequentially:
 
 ```bash
-cd ~/Documents/masif_seed
-docker run --rm --platform linux/amd64 \
-  -v "$PWD:/workspace" \
-  -w /workspace/masif/data/masif_human_proteome \
-  masif-mimicry bash -lc '
+: "${MASIF_SEED_ROOT:?Set MASIF_SEED_ROOT as shown in Portable quick start}"
+: "${MIMICRY_IMAGE:?Set MIMICRY_IMAGE as shown in Portable quick start}"
+cd "$MASIF_SEED_ROOT"
+
+apptainer exec --bind "$MASIF_SEED_ROOT:/workspace" "$MIMICRY_IMAGE" bash -lc '
+    cd /workspace/masif/data/masif_human_proteome
     set -euo pipefail
     for fragment in input/fragments/*.pdb; do
       fragment_id=${fragment##*/}

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import platform
@@ -37,7 +38,41 @@ def _python_runtimes() -> tuple[str, str]:
     )
 
 
+def database_proteins(job: JobConfig) -> list[str]:
+    """Return the deterministic seed list from inline config or a manifest file."""
+    if job.database.proteins:
+        proteins = list(job.database.proteins)
+    else:
+        assert job.database.protein_list is not None
+        try:
+            lines = job.database.protein_list.read_text(encoding="utf-8").splitlines()
+        except OSError as exc:
+            raise ValueError(
+                f"cannot read database.protein_list: {job.database.protein_list}"
+            ) from exc
+        proteins = [
+            line.strip()
+            for line in lines
+            if line.strip() and not line.lstrip().startswith("#")
+        ]
+    if not proteins:
+        raise ValueError("database protein source contains no identifiers")
+    if len(set(proteins)) != len(proteins):
+        raise ValueError("database protein source contains duplicate identifiers")
+    return proteins
+
+
+def _replace_shell_tokens(command: str) -> str:
+    return (
+        command.replace("__MASIF_SEED_SHARD__", '"$MASIF_SEED_SHARD"')
+        .replace("__MASIF_SHARD_RESULT_DIR__", '"$MASIF_SHARD_RESULT_DIR"')
+    )
+
+
 def build_commands(job: JobConfig) -> list[str]:
+    proteins = database_proteins(job)
+    array_tasks = job.runtime.slurm.array_tasks if job.runtime.backend == "slurm" else None
+    array_scan = array_tasks is not None
     project_root = _project_root(job)
     run_dir = job.run_dir
     target_dir = project_root / "data" / "target"
@@ -65,6 +100,11 @@ def build_commands(job: JobConfig) -> list[str]:
         Path(c_project) / "source",
     ]
     pythonpath = ":".join(str(path) for path in source_paths)
+    link_command = (
+        f"if [[ ! -e {_q(c_target_link)} ]]; then "
+        f"ln -s {_q(c_target_link_value)} {_q(c_target_link)} 2>/dev/null || "
+        f"[[ -L {_q(c_target_link)} ]]; fi"
+    )
     commands = [
         (
             f"test -x {_q(masif_python)} || "
@@ -75,19 +115,35 @@ def build_commands(job: JobConfig) -> list[str]:
             f"{{ echo 'Bonsai Python not found: {bonsai_python}' >&2; exit 1; }}"
         ),
         f"mkdir -p {_q(c_target_dir)} {_q(c_result_dir)} {_q(c_tmp)} {_q(Path(c_target_link).parent)}",
-        (
-            f"if [[ ! -e {_q(c_target_link)} ]]; then "
-            f"ln -s {_q(c_target_link_value)} {_q(c_target_link)}; fi"
-        ),
-        f"export TMPDIR={_q(c_tmp)}",
+        link_command,
         f"export MASIF_PYTHON={_q(masif_python)}",
         f"export BONSAI_PYTHON={_q(bonsai_python)}",
         f"export PYTHONPATH={_q(pythonpath)}:${{PYTHONPATH:-}}",
-        (
-            f"bash {_q(Path(c_project) / 'preprocess_pdb.sh')} "
-            f"{_q(c_target_structure)} {_q(job.target.processed_id)} -o {_q(c_target_dir)}"
-        ),
     ]
+    if array_scan:
+        c_shard_dir = command_path(job, run_dir / "inputs" / "seed-shards")
+        c_state_dir = command_path(job, run_dir / "state" / "shards")
+        c_shard_results = command_path(job, result_dir / "shards")
+        c_shard_tmp = command_path(job, tmp_dir / "shards")
+        commands.extend(
+            [
+                'export MASIF_ARRAY_TASK_ID="${SLURM_ARRAY_TASK_ID:?SLURM_ARRAY_TASK_ID is required}"',
+                f"printf -v MASIF_SEED_SHARD '%s/%s.txt' {_q(c_shard_dir)} \"$MASIF_ARRAY_TASK_ID\"",
+                f"printf -v MASIF_SHARD_RESULT_DIR '%s/%s' {_q(c_shard_results)} \"$MASIF_ARRAY_TASK_ID\"",
+                f"printf -v MASIF_SHARD_TMP_DIR '%s/%s' {_q(c_shard_tmp)} \"$MASIF_ARRAY_TASK_ID\"",
+                f"printf -v MASIF_SHARD_DONE '%s/%s.complete' {_q(c_state_dir)} \"$MASIF_ARRAY_TASK_ID\"",
+                'if [[ -f "$MASIF_SHARD_DONE" ]]; then echo "Shard $MASIF_ARRAY_TASK_ID already complete; skipping."; exit 0; fi',
+                'test -s "$MASIF_SEED_SHARD" || { echo "Missing or empty shard: $MASIF_SEED_SHARD" >&2; exit 1; }',
+                'mkdir -p "$MASIF_SHARD_RESULT_DIR" "$MASIF_SHARD_TMP_DIR"',
+                'export TMPDIR="$MASIF_SHARD_TMP_DIR"',
+            ]
+        )
+    else:
+        commands.append(f"export TMPDIR={_q(c_tmp)}")
+    commands.append(
+        f"bash {_q(Path(c_project) / 'preprocess_pdb.sh')} "
+        f"{_q(c_target_structure)} {_q(job.target.processed_id)} -o {_q(c_target_dir)}"
+    )
 
     params = job.search.resolved()
     search = [
@@ -123,12 +179,14 @@ def build_commands(job: JobConfig) -> list[str]:
         "--heavy_atom_clash_threshold",
         params["heavy_atom_clash_threshold"],
         "--output_dir",
-        c_result_dir,
+        "__MASIF_SHARD_RESULT_DIR__" if array_scan else c_result_dir,
         "--output_postfix",
         job.name,
     ]
-    if len(job.database.proteins) == 1:
-        search.extend(["--seed_pdb", job.database.proteins[0]])
+    if array_scan:
+        search.extend(["--split_seed_list", "__MASIF_SEED_SHARD__"])
+    elif len(proteins) == 1:
+        search.extend(["--seed_pdb", proteins[0]])
     else:
         seed_list = run_dir / "inputs" / "seed-proteins.txt"
         search.extend(["--split_seed_list", command_path(job, seed_list)])
@@ -145,7 +203,7 @@ def build_commands(job: JobConfig) -> list[str]:
         search.append("--count_clashes")
     if params["interface_only"]:
         search.append("--interface_only")
-    commands.append(" ".join(_q(item) for item in search))
+    commands.append(_replace_shell_tokens(" ".join(_q(item) for item in search)))
 
     if job.postprocessing.enabled:
         ligand = job.target.ligand.replace(":", "_") if job.target.ligand else None
@@ -198,16 +256,63 @@ def build_commands(job: JobConfig) -> list[str]:
                     ),
                 ]
             )
+    if array_scan:
+        commands.append('touch "$MASIF_SHARD_DONE"')
     return commands
 
 
 def prepare_run(job: JobConfig) -> RunPlan:
+    proteins = database_proteins(job)
+    array_tasks = job.runtime.slurm.array_tasks if job.runtime.backend == "slurm" else None
     run_dir = job.run_dir
-    for relative in ("inputs", "logs", "results", "tmp", "data"):
+    for relative in ("inputs", "logs", "results", "tmp", "data", "state"):
         (run_dir / relative).mkdir(parents=True, exist_ok=True)
-    if len(job.database.proteins) > 1:
+    if array_tasks is not None:
+        if array_tasks > len(proteins):
+            raise ValueError(
+                f"slurm.array_tasks ({array_tasks}) exceeds the number of proteins "
+                f"({len(proteins)})"
+            )
+        shard_dir = run_dir / "inputs" / "seed-shards"
+        state_dir = run_dir / "state" / "shards"
+        shard_dir.mkdir(parents=True, exist_ok=True)
+        state_dir.mkdir(parents=True, exist_ok=True)
+        protein_digest = hashlib.sha256(
+            ("\n".join(proteins) + "\n").encode("utf-8")
+        ).hexdigest()
+        array_plan = {
+            "format": 1,
+            "assignment": "round-robin",
+            "protein_count": len(proteins),
+            "protein_sha256": protein_digest,
+            "array_tasks": array_tasks,
+        }
+        array_plan_path = run_dir / "inputs" / "array-plan.json"
+        complete_markers = list(state_dir.glob("*.complete"))
+        if complete_markers:
+            try:
+                previous_plan = json.loads(array_plan_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise ValueError(
+                    f"run {job.name!r} has completed shards but no readable array plan; "
+                    "use a new run name"
+                ) from exc
+            if previous_plan != array_plan:
+                raise ValueError(
+                    f"run {job.name!r} has completed shards for a different protein list "
+                    "or array size; use a new run name"
+                )
+        array_plan_path.write_text(
+            json.dumps(array_plan, indent=2) + "\n", encoding="utf-8"
+        )
+        for shard_id in range(array_tasks):
+            shard = proteins[shard_id::array_tasks]
+            (shard_dir / f"{shard_id}.txt").write_text(
+                "\n".join(shard) + "\n", encoding="utf-8"
+            )
+    elif len(proteins) > 1:
         (run_dir / "inputs" / "seed-proteins.txt").write_text(
-            "\n".join(job.database.proteins) + "\n", encoding="utf-8"
+            "\n".join(proteins) + "\n", encoding="utf-8"
         )
 
     resolved_path = run_dir / "run.yaml"
@@ -224,6 +329,8 @@ def prepare_run(job: JobConfig) -> RunPlan:
         "platform": platform.platform(),
         "backend": job.runtime.backend,
         "pid": os.getpid(),
+        "database_proteins": len(proteins),
+        "slurm_array_tasks": array_tasks,
     }
     (run_dir / "provenance.json").write_text(
         json.dumps(provenance, indent=2) + "\n", encoding="utf-8"
@@ -233,7 +340,12 @@ def prepare_run(job: JobConfig) -> RunPlan:
 
 def execute(plan: RunPlan, job: JobConfig) -> subprocess.CompletedProcess[str]:
     if job.runtime.backend == "slurm":
-        command = ["sbatch", str(plan.script_path)] if job.runtime.submit else ["bash", "-n", str(plan.script_path)]
+        command = (
+            ["sbatch", plan.script_path.name]
+            if job.runtime.submit
+            else ["bash", "-n", plan.script_path.name]
+        )
+        return subprocess.run(command, cwd=plan.run_dir, text=True, check=True)
     else:
         command = [str(plan.script_path)]
     return subprocess.run(command, text=True, check=True)

@@ -8,18 +8,29 @@ from masif_mimicry.config import JobConfig
 
 def _slurm_header(job: JobConfig) -> str:
     resources = job.runtime.slurm
+    job_name = resources.job_name or job.name
+    output = resources.output or (
+        "logs/%x-%A_%a.out" if resources.array_tasks is not None else "logs/%x-%j.out"
+    )
     lines = [
         "#!/bin/bash -l",
-        f"#SBATCH --job-name={job.name}",
-        "#SBATCH --nodes=1",
-        "#SBATCH --ntasks=1",
+        f"#SBATCH --nodes={resources.nodes}",
+        f"#SBATCH --ntasks-per-node={resources.ntasks_per_node}",
+        f"#SBATCH --job-name={job_name}",
         f"#SBATCH --cpus-per-task={resources.cpus}",
         f"#SBATCH --mem={resources.memory}",
         f"#SBATCH --time={resources.time}",
-        f"#SBATCH --output={job.run_dir}/logs/slurm-%j.out",
+        f"#SBATCH --output={output}",
     ]
+    if resources.qos:
+        lines.insert(2, f"#SBATCH --qos={resources.qos}")
     if resources.partition:
         lines.append(f"#SBATCH --partition={resources.partition}")
+    if resources.array_tasks is not None:
+        array = f"0-{resources.array_tasks - 1}"
+        if resources.array_max_parallel is not None:
+            array += f"%{resources.array_max_parallel}"
+        lines.append(f"#SBATCH --array={array}")
     return "\n".join(lines)
 
 
@@ -55,4 +66,3 @@ def command_path(job: JobConfig, path: Path) -> str:
     if job.runtime.backend == "local":
         return str(path.resolve())
     return str(_container_path(path, job.runtime.suite_root))
-

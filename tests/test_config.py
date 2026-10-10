@@ -49,3 +49,44 @@ def test_container_paths_must_be_below_suite_root(tmp_path: Path):
                 },
             }
         )
+
+
+def test_database_requires_exactly_one_protein_source():
+    base = {
+        "name": "test",
+        "target": {"structure": "/workspace/target.pdb", "query_chain": "A"},
+        "runtime": {"backend": "local", "suite_root": "/workspace"},
+    }
+    with pytest.raises(ValidationError, match="exactly one"):
+        JobConfig.model_validate({**base, "database": {}})
+    with pytest.raises(ValidationError, match="exactly one"):
+        JobConfig.model_validate(
+            {
+                **base,
+                "database": {
+                    "proteins": ["seed_A"],
+                    "protein_list": "/workspace/seeds.txt",
+                },
+            }
+        )
+
+
+def test_slurm_arrays_require_search_only_mode(tmp_path: Path):
+    suite = tmp_path / "suite"
+    with pytest.raises(ValidationError, match="postprocessing must be disabled"):
+        JobConfig.model_validate(
+            {
+                "name": "array",
+                "target": {
+                    "structure": str(suite / "masif_mimicry" / "target.pdb"),
+                    "query_chain": "A",
+                },
+                "database": {"proteins": ["seed_A"]},
+                "runtime": {
+                    "backend": "slurm",
+                    "suite_root": str(suite),
+                    "image": str(suite / "image.sif"),
+                    "slurm": {"array_tasks": 1},
+                },
+            }
+        )

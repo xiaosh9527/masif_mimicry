@@ -45,6 +45,12 @@ def run_checks(job: JobConfig | None = None) -> list[Check]:
     if job is None:
         return checks
     checks.append(_path_check("Target structure", job.target.structure, "input PDB"))
+    if job.database.protein_list is not None:
+        checks.append(
+            _path_check(
+                "Database protein list", job.database.protein_list, "seed manifest"
+            )
+        )
     checks.append(_path_check("Suite root", job.runtime.suite_root, "suite directory"))
     checks.append(
         _path_check(

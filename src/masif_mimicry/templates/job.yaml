@@ -29,8 +29,15 @@ runtime:
   suite_root: /workspace
   submit: false
   slurm:
+    nodes: 1
+    ntasks_per_node: 1
     cpus: 4
     memory: 24G
     time: "24:00:00"
+    # For a proteome scan, replace database.proteins with database.protein_list,
+    # disable postprocessing, select backend: slurm, and set array_tasks.
+    # qos: serial
+    # array_tasks: 500
+    # array_max_parallel: 50
 
 output_root: runs

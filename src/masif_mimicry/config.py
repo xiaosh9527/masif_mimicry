@@ -62,8 +62,15 @@ class Target(BaseModel):
 
 class Database(BaseModel):
     name: str = "masif_human_proteome"
-    proteins: list[str] = Field(min_length=1)
+    proteins: list[str] = Field(default_factory=list)
+    protein_list: Path | None = None
     root: Path | None = None
+
+    @model_validator(mode="after")
+    def require_one_protein_source(self) -> Database:
+        if bool(self.proteins) == bool(self.protein_list):
+            raise ValueError("set exactly one of database.proteins or database.protein_list")
+        return self
 
 
 class Search(BaseModel):
@@ -105,10 +112,23 @@ class Postprocessing(BaseModel):
 
 
 class SlurmResources(BaseModel):
-    partition: str | None = None
+    nodes: int = Field(default=1, gt=0)
+    ntasks_per_node: int = Field(default=1, gt=0)
+    partition: str | None = Field(default=None, pattern=r"^[^\r\n]+$")
+    qos: str | None = Field(default=None, pattern=r"^[^\r\n]+$")
+    job_name: str | None = Field(default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
     cpus: int = Field(default=4, gt=0)
-    memory: str = "24G"
+    memory: str = Field(default="24G", pattern=r"^[^\s\r\n]+$")
     time: str = Field(default="24:00:00", pattern=r"^\d{1,3}:\d{2}:\d{2}$")
+    output: str | None = Field(default=None, pattern=r"^[^\r\n]+$")
+    array_tasks: int | None = Field(default=None, gt=0)
+    array_max_parallel: int | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def require_array_for_concurrency_limit(self) -> SlurmResources:
+        if self.array_max_parallel is not None and self.array_tasks is None:
+            raise ValueError("slurm.array_max_parallel requires slurm.array_tasks")
+        return self
 
 
 class Runtime(BaseModel):
@@ -122,6 +142,8 @@ class Runtime(BaseModel):
     def require_image_for_container_backends(self) -> Runtime:
         if self.backend in {"apptainer", "slurm"} and self.image is None:
             raise ValueError(f"runtime.image is required for the {self.backend} backend")
+        if self.slurm.array_tasks is not None and self.backend != "slurm":
+            raise ValueError("slurm.array_tasks requires runtime.backend: slurm")
         return self
 
 
@@ -136,6 +158,11 @@ class JobConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_container_paths(self) -> JobConfig:
+        if self.runtime.slurm.array_tasks is not None and self.postprocessing.enabled:
+            raise ValueError(
+                "postprocessing must be disabled for Slurm array scans; "
+                "postprocess selected hits after the search completes"
+            )
         if self.runtime.backend == "local":
             return self
         suite = self.runtime.suite_root.resolve()
@@ -145,6 +172,8 @@ class JobConfig(BaseModel):
         }
         if self.database.root is not None:
             paths["database.root"] = self.database.root
+        if self.database.protein_list is not None:
+            paths["database.protein_list"] = self.database.protein_list
         for label, path in paths.items():
             if path.is_absolute() and not path.resolve().is_relative_to(suite):
                 raise ValueError(
@@ -158,6 +187,7 @@ class JobConfig(BaseModel):
         for section, key in (
             ("target", "structure"),
             ("database", "root"),
+            ("database", "protein_list"),
             ("runtime", "suite_root"),
             ("runtime", "image"),
         ):

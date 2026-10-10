@@ -15,7 +15,7 @@ from . import __version__
 from .checkpoint import inspect_checkpoint
 from .config import load_job
 from .doctor import all_ok, run_checks
-from .pipeline import build_commands, execute, prepare_run
+from .pipeline import build_commands, database_proteins, execute, prepare_run
 from .results import build_report
 
 app = typer.Typer(
@@ -62,9 +62,14 @@ def init_project(
 @app.command()
 def validate(job_file: Annotated[Path, typer.Argument(exists=True, dir_okay=False)]):
     job = _load(job_file)
+    try:
+        proteins = database_proteins(job)
+    except ValueError as exc:
+        typer.secho(f"Configuration error: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(2) from exc
     typer.secho(f"Valid job: {job.name}", fg=typer.colors.GREEN)
     typer.echo(f"Target: {job.target.processed_id}")
-    typer.echo(f"Database proteins: {len(job.database.proteins)}")
+    typer.echo(f"Database proteins: {len(proteins)}")
     typer.echo(f"Backend: {job.runtime.backend}")
 
 
@@ -172,6 +177,11 @@ def status(run_dir: Annotated[Path, typer.Argument(exists=True, file_okay=False)
         complete = path.exists() and (not path.is_dir() or any(path.iterdir()))
         typer.secho("✓" if complete else "○", fg=typer.colors.GREEN if complete else None, nl=False)
         typer.echo(f" {label}")
+    shard_dir = run_dir / "inputs" / "seed-shards"
+    if shard_dir.is_dir():
+        total_shards = len(list(shard_dir.glob("*.txt")))
+        complete_shards = len(list((run_dir / "state" / "shards").glob("*.complete")))
+        typer.echo(f"Array shards: {complete_shards}/{total_shards} complete")
     provenance_path = run_dir / "provenance.json"
     if provenance_path.exists():
         provenance = json.loads(provenance_path.read_text(encoding="utf-8"))

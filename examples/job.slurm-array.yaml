@@ -1,0 +1,38 @@
+# Replace /shared/path with a filesystem path visible on the login and compute nodes.
+name: whole-human-proteome
+
+target:
+  structure: /shared/path/masif_seed/masif_mimicry/my-screen/inputs/target.pdb
+  pdb_id: target
+  query_chain: A
+  focus: {residue: 123, atom: CA}
+
+database:
+  name: masif_human_proteome
+  protein_list: /shared/path/masif_seed/masif/data/masif_human_proteome/processed-proteins.txt
+
+search:
+  preset: balanced
+  count_clashes: true
+
+postprocessing:
+  enabled: false
+
+runtime:
+  backend: slurm
+  suite_root: /shared/path/masif_seed
+  image: /shared/path/masif_seed/masif_mimicry/masif_mimicry.sif
+  submit: false
+  slurm:
+    nodes: 1
+    qos: serial
+    ntasks_per_node: 1
+    job_name: benchmark
+    array_tasks: 500
+    cpus: 2
+    memory: 10g
+    time: "24:00:00"
+    output: logs/%x-%A_%a.out
+    # array_max_parallel: 50
+
+output_root: /shared/path/masif_seed/masif_mimicry/runs

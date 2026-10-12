@@ -2,7 +2,7 @@
 name: whole-human-proteome
 
 target:
-  structure: /scratch/shxiao/masif_seed/masif_mimicry/data/input/6h0g.pdb
+  structure: /scratch/shxiao/masif_seed/masif_mimicry/data/template/input/6h0g.pdb
   pdb_id: 6h0g
   query_chain: C
   receptor_chain: B

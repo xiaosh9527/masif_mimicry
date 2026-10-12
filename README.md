@@ -290,6 +290,27 @@ The SIF, the complete `masif_seed` checkout, the target PDB, and the database
 must be on storage visible at the same absolute path from the submission host
 and every compute node. The 12 TB database remains outside both Git and the SIF.
 
+If the database under `masif/data` is a symbolic link to external storage,
+declare its resolved directory in `runtime.binds`. Each entry is mounted at the
+same absolute path inside Apptainer, allowing links such as this one to work:
+
+```text
+/scratch/shxiao/masif_seed/masif/data/masif_human_proteome
+  -> /work/lpdi/users/shxiao/masif_seed/masif/data/masif_human_proteome_domains_merged
+```
+
+The corresponding runtime configuration is:
+
+```yaml
+runtime:
+  suite_root: /scratch/shxiao/masif_seed
+  binds:
+    - /work/lpdi/users/shxiao/masif_seed/masif/data/masif_human_proteome_domains_merged
+```
+
+The CLI verifies that external paths are covered by a declared bind and the
+generated `submit.slurm` adds both the suite and external-storage mounts.
+
 ### 1. Create a stable processed-protein manifest
 
 Run this after database construction. It includes only descriptor directories
@@ -339,6 +360,8 @@ runtime:
   backend: slurm
   suite_root: /shared/path/masif_seed
   image: /shared/path/masif_seed/masif_mimicry/masif_mimicry.sif
+  # Add real external-storage roots here when database paths are symlinks.
+  binds: []
   submit: false
   slurm:
     nodes: 1

@@ -27,6 +27,8 @@ runtime:
   # The normal mode when this CLI is invoked through Docker or Apptainer.
   backend: local
   suite_root: /workspace
+  # For symlinked databases on HPC, list each resolved external storage root.
+  binds: []
   submit: false
   slurm:
     nodes: 1

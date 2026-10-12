@@ -1,15 +1,17 @@
-# Replace /shared/path with a filesystem path visible on the login and compute nodes.
+# LPDI HPC template. Change both /scratch and /work paths on other clusters.
 name: whole-human-proteome
 
 target:
-  structure: /shared/path/masif_seed/masif_mimicry/my-screen/inputs/target.pdb
-  pdb_id: target
-  query_chain: A
-  focus: {residue: 123, atom: CA}
+  structure: /scratch/shxiao/masif_seed/masif_mimicry/data/input/6h0g.pdb
+  pdb_id: 6h0g
+  query_chain: C
+  receptor_chain: B
+  focus: {residue: 423, atom: CA}
+  ligand: B:Y70
 
 database:
   name: masif_human_proteome
-  protein_list: /shared/path/masif_seed/masif/data/masif_human_proteome/processed-proteins.txt
+  protein_list: /scratch/shxiao/masif_seed/masif/data/masif_human_proteome/lists/hp_list.txt
 
 search:
   preset: balanced
@@ -20,19 +22,22 @@ postprocessing:
 
 runtime:
   backend: slurm
-  suite_root: /shared/path/masif_seed
-  image: /shared/path/masif_seed/masif_mimicry/masif_mimicry.sif
+  suite_root: /scratch/shxiao/masif_seed
+  image: /scratch/shxiao/masif_seed/masif_mimicry/masif_mimicry.sif
+  # The database path under suite_root is a symlink to this real directory.
+  binds:
+    - /work/lpdi/users/shxiao/masif_seed/masif/data/masif_human_proteome_domains_merged
   submit: false
   slurm:
     nodes: 1
     qos: serial
     ntasks_per_node: 1
     job_name: benchmark
-    array_tasks: 500
+    array_tasks: 5
     cpus: 2
     memory: 10g
     time: "24:00:00"
     output: logs/%x-%A_%a.out
     # array_max_parallel: 50
 
-output_root: /shared/path/masif_seed/masif_mimicry/runs
+output_root: /scratch/shxiao/masif_seed/masif_mimicry/runs

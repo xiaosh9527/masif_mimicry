@@ -34,14 +34,16 @@ def _slurm_header(job: JobConfig) -> str:
     return "\n".join(lines)
 
 
-def _container_path(path: Path, suite_root: Path) -> Path:
+def _container_path(path: Path, suite_root: Path, binds: list[Path]) -> Path:
     try:
-        return Path("/workspace") / path.resolve().relative_to(suite_root.resolve())
-    except ValueError as exc:
+        return Path("/workspace") / path.absolute().relative_to(suite_root.absolute())
+    except ValueError:
+        resolved = path.resolve()
+        if any(resolved.is_relative_to(bind.resolve()) for bind in binds):
+            return resolved
         raise ValueError(
-            f"{path} is outside runtime.suite_root ({suite_root}); "
-            "container backends can only access files below suite_root"
-        ) from exc
+            f"{path} is outside runtime.suite_root ({suite_root}) and runtime.binds"
+        ) from None
 
 
 def render_execution_script(job: JobConfig, commands: list[str]) -> str:
@@ -53,8 +55,13 @@ def render_execution_script(job: JobConfig, commands: list[str]) -> str:
     suite = job.runtime.suite_root.resolve()
     image = job.runtime.image.resolve()
     inner = body
+    bind_specs = [f"{suite}:/workspace"]
+    bind_specs.extend(f"{path.resolve()}:{path.resolve()}" for path in job.runtime.binds)
+    bind_arguments = " ".join(
+        f"--bind {shlex.quote(bind_spec)}" for bind_spec in bind_specs
+    )
     wrapper = (
-        f"apptainer exec --bind {shlex.quote(str(suite))}:/workspace "
+        f"apptainer exec {bind_arguments} "
         f"--pwd /workspace {shlex.quote(str(image))} /bin/bash -lc {shlex.quote(inner)}"
     )
     if job.runtime.backend == "apptainer":
@@ -65,4 +72,4 @@ def render_execution_script(job: JobConfig, commands: list[str]) -> str:
 def command_path(job: JobConfig, path: Path) -> str:
     if job.runtime.backend == "local":
         return str(path.resolve())
-    return str(_container_path(path, job.runtime.suite_root))
+    return str(_container_path(path, job.runtime.suite_root, job.runtime.binds))

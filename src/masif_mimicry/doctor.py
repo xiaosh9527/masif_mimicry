@@ -52,6 +52,8 @@ def run_checks(job: JobConfig | None = None) -> list[Check]:
             )
         )
     checks.append(_path_check("Suite root", job.runtime.suite_root, "suite directory"))
+    for bind_root in job.runtime.binds:
+        checks.append(_path_check("Additional bind", bind_root, "external storage"))
     checks.append(
         _path_check(
             "MaSIF source", job.runtime.suite_root / "masif" / "source", "dependency"

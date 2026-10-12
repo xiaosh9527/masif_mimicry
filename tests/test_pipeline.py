@@ -123,6 +123,17 @@ def test_slurm_array_header_matches_requested_resources(tmp_path: Path):
         assert directive in script
 
 
+def test_apptainer_additional_bind_is_rendered(tmp_path: Path):
+    job = _array_job(tmp_path, ["a", "b"])
+    external = tmp_path / "external-database"
+    external.mkdir()
+    job.runtime.binds = [external]
+
+    script = render_execution_script(job, ["echo ok"])
+
+    assert f"--bind {external}:{external}" in script
+
+
 def test_prepare_run_writes_deterministic_restartable_shards(tmp_path: Path):
     proteins = ["seed_A", "seed_B", "seed_C", "seed_D", "seed_E"]
     job = _array_job(tmp_path, proteins)

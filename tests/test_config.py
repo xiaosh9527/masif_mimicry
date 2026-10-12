@@ -51,6 +51,38 @@ def test_container_paths_must_be_below_suite_root(tmp_path: Path):
         )
 
 
+def test_symlinked_manifest_is_allowed_when_real_root_is_bound(tmp_path: Path):
+    suite = tmp_path / "scratch" / "masif_seed"
+    database = tmp_path / "work" / "human_proteome"
+    database.mkdir(parents=True)
+    manifest = database / "hp_list.txt"
+    manifest.write_text("seed_A\n", encoding="utf-8")
+    link = suite / "masif" / "data" / "masif_human_proteome"
+    link.parent.mkdir(parents=True)
+    link.symlink_to(database, target_is_directory=True)
+
+    job = JobConfig.model_validate(
+        {
+            "name": "array",
+            "target": {
+                "structure": str(suite / "masif_mimicry" / "target.pdb"),
+                "query_chain": "A",
+            },
+            "database": {"protein_list": str(link / "hp_list.txt")},
+            "postprocessing": {"enabled": False},
+            "runtime": {
+                "backend": "slurm",
+                "suite_root": str(suite),
+                "image": str(suite / "image.sif"),
+                "binds": [str(database)],
+                "slurm": {"array_tasks": 1},
+            },
+        }
+    )
+
+    assert job.database.protein_list == link / "hp_list.txt"
+
+
 def test_database_requires_exactly_one_protein_source():
     base = {
         "name": "test",

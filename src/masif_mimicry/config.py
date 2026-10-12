@@ -135,6 +135,7 @@ class Runtime(BaseModel):
     backend: Literal["local", "apptainer", "slurm"] = "slurm"
     suite_root: Path
     image: Path | None = None
+    binds: list[Path] = Field(default_factory=list)
     submit: bool = False
     slurm: SlurmResources = Field(default_factory=SlurmResources)
 
@@ -165,7 +166,9 @@ class JobConfig(BaseModel):
             )
         if self.runtime.backend == "local":
             return self
-        suite = self.runtime.suite_root.resolve()
+        suite = self.runtime.suite_root.absolute()
+        resolved_suite = self.runtime.suite_root.resolve()
+        bind_roots = [path.resolve() for path in self.runtime.binds]
         paths = {
             "target.structure": self.target.structure,
             "output_root": self.output_root,
@@ -175,10 +178,20 @@ class JobConfig(BaseModel):
         if self.database.protein_list is not None:
             paths["database.protein_list"] = self.database.protein_list
         for label, path in paths.items():
-            if path.is_absolute() and not path.resolve().is_relative_to(suite):
+            if not path.is_absolute():
+                continue
+            lexical_path = path.absolute()
+            resolved_path = path.resolve()
+            below_suite = lexical_path.is_relative_to(suite)
+            resolved_in_suite = resolved_path.is_relative_to(resolved_suite)
+            covered_by_bind = any(
+                resolved_path.is_relative_to(bind_root) for bind_root in bind_roots
+            )
+            if not ((below_suite and resolved_in_suite) or covered_by_bind):
                 raise ValueError(
-                    f"{label} ({path}) must be below runtime.suite_root ({suite}) "
-                    "for container backends"
+                    f"{label} ({path}) resolves to {resolved_path}, which must be below "
+                    f"runtime.suite_root ({suite}) or one of runtime.binds for container "
+                    "backends"
                 )
         return self
 
@@ -197,6 +210,11 @@ class JobConfig(BaseModel):
                 data[section][key] = path if path.is_absolute() else (base_dir / path).resolve()
         output = Path(data["output_root"]).expanduser()
         data["output_root"] = output if output.is_absolute() else (base_dir / output).resolve()
+        data["runtime"]["binds"] = [
+            path if path.is_absolute() else (base_dir / path).resolve()
+            for value in data["runtime"].get("binds", [])
+            for path in [Path(value).expanduser()]
+        ]
         return JobConfig.model_validate(data)
 
     @property

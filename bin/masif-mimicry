@@ -4,11 +4,39 @@ set -euo pipefail
 usage() {
     cat <<'EOF'
 Usage: masif-mimicry run [--dry-run] JOB.yaml
+       masif-mimicry status RUN_DIRECTORY
 
 Prepare a Slurm run through the MaSIF-mimicry SIF and submit it with the
-host's sbatch command. Set MIMICRY_IMAGE to override the default SIF path.
+host's sbatch command, or show progress for an existing run. Set MIMICRY_IMAGE
+to override the default SIF path.
 EOF
 }
+
+if [[ ${1:-} == "status" ]]; then
+    shift
+    if [[ $# -ne 1 ]]; then
+        usage >&2
+        exit 2
+    fi
+    run_directory=$(realpath "$1")
+    launcher_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+    project_root=$(cd -- "$launcher_dir/.." && pwd -P)
+    default_suite_root=$(cd -- "$project_root/.." && pwd -P)
+    bootstrap_image=${MIMICRY_IMAGE:-"$project_root/masif_mimicry.sif"}
+    command -v apptainer >/dev/null || {
+        echo "Apptainer was not found on the host." >&2
+        exit 1
+    }
+    [[ -f $bootstrap_image ]] || {
+        echo "Container image not found: $bootstrap_image" >&2
+        exit 1
+    }
+    exec apptainer exec \
+        --bind "$default_suite_root:$default_suite_root" \
+        --env "PYTHONPATH=$project_root/src" \
+        "$bootstrap_image" \
+        /usr/local/bin/masif-mimicry status "$run_directory"
+fi
 
 if [[ ${1:-} != "run" ]]; then
     usage >&2

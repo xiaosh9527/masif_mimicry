@@ -5,9 +5,7 @@ MaSIF-mimicry searches protein surfaces for patches that resemble a target inter
 ![MaSIF-mimicry overview and pipeline](img/masif_mimicry.jpg)
 
 > [!IMPORTANT]
-> MaSIF-mimicry depends on the MaSIF and MaSIF-seed-search code, but these are
-> **not two separately cloned upstream repositories**. Both directories are
-> included in the single upstream
+> MaSIF-mimicry depends on the upstream
 > [`LPDI-EPFL/masif_seed`](https://github.com/LPDI-EPFL/masif_seed.git)
 > repository. MaSIF-mimicry has been tested on x86 Linux. Run
 > `masif-mimicry doctor job.yaml` before starting a long job. Also verify that
@@ -280,204 +278,49 @@ array as described below instead of placing thousands of values in YAML.
 ## Proteome-wide Slurm array scans
 
 The array mode divides one ordered protein manifest into deterministic,
-round-robin shards. Every Slurm task reads one shard and writes to its own
-protein/PDB-ID folder under `results/`. Temporary files remain
-isolated under `tmp/shards/<array-index>/`.
-After a task succeeds it creates `state/shards/<array-index>.complete`.
-Resubmitting the same generated script skips completed tasks, so an interrupted
-screen can be resumed without repeating successful shards.
+round-robin shards. Each task writes directly to `results/<protein-id>/` and
+records a completion marker, so interrupted scans can resume without repeating
+successful work. The large database remains outside Git and the SIF.
 
-The SIF, the complete `masif_seed` checkout, the target PDB, and the database
-must be on storage visible at the same absolute path from the submission host
-and every compute node. The 12 TB database remains outside both Git and the SIF.
+Start from [`examples/job.slurm-array.yaml`](examples/job.slurm-array.yaml) and
+replace its placeholder paths with storage visible from both the login node
+and compute nodes. If a database path is a symbolic link to external storage,
+list its resolved storage root under `runtime.binds`.
 
-If the database under `masif/data` is a symbolic link to external storage,
-declare its resolved directory in `runtime.binds`. Each entry is mounted at the
-same absolute path inside Apptainer, allowing links such as this one to work:
+> **EPFL/LPDI users:** cluster-specific paths, the internal database bind,
+> locale setup, and the ready-to-use configuration are documented separately
+> in the [EPFL HPC note](docs/EPFL_HPC.md).
 
-```text
-/scratch/shxiao/masif_seed/masif/data/masif_human_proteome
-  -> /work/lpdi/users/shxiao/masif_seed/masif/data/masif_human_proteome_domains_merged
-```
-
-The corresponding runtime configuration is:
-
-```yaml
-runtime:
-  suite_root: /scratch/shxiao/masif_seed
-  binds:
-    - /work/lpdi/users/shxiao/masif_seed/masif/data/masif_human_proteome_domains_merged
-```
-
-The CLI verifies that external paths are covered by a declared bind and the
-generated `submit.slurm` adds both the suite and external-storage mounts.
-
-### 1. Create a stable processed-protein manifest
-
-Run this after database construction. It includes only descriptor directories
-that actually exist, sorts them for reproducibility, and writes one processed
-MaSIF identifier per line:
+For the portable one-command interface:
 
 ```bash
-: "${MASIF_SEED_ROOT:?Set MASIF_SEED_ROOT as shown in Portable quick start}"
-DATABASE="$MASIF_SEED_ROOT/masif/data/masif_human_proteome"
-find "$DATABASE/descriptors/sc05/all_feat" \
-  -mindepth 1 -maxdepth 1 -type d -exec basename {} \; \
-  | LC_ALL=C sort \
-  > "$DATABASE/processed-proteins.txt"
-wc -l "$DATABASE/processed-proteins.txt"
-```
-
-Keep this manifest unchanged for the lifetime of a run. Blank lines and lines
-beginning with `#` are ignored; duplicate identifiers are rejected.
-
-### 2. Configure the array
-
-Use host-visible absolute paths in a Slurm job file. The following settings
-produce the requested `0-499` array:
-
-```yaml
-name: whole-human-proteome
-
-target:
-  structure: /shared/path/masif_seed/masif_mimicry/my-screen/inputs/target.pdb
-  pdb_id: target
-  query_chain: A
-  focus: {residue: 123, atom: CA}
-
-database:
-  name: masif_human_proteome
-  protein_list: /shared/path/masif_seed/masif/data/masif_human_proteome/processed-proteins.txt
-
-search:
-  preset: balanced
-  count_clashes: true
-
-# Array tasks perform the search only. Postprocess selected hits afterward.
-postprocessing:
-  enabled: false
-
-runtime:
-  backend: slurm
-  suite_root: /shared/path/masif_seed
-  image: /shared/path/masif_seed/masif_mimicry/masif_mimicry.sif
-  # Add real external-storage roots here when database paths are symlinks.
-  binds: []
-  submit: false
-  slurm:
-    nodes: 1
-    qos: serial
-    ntasks_per_node: 1
-    job_name: benchmark
-    array_tasks: 500
-    cpus: 2
-    memory: 10g
-    time: "24:00:00"
-    output: logs/%x-%A_%a.out
-    # Optional: limit simultaneously running tasks without changing the shards.
-    # array_max_parallel: 50
-
-output_root: /shared/path/masif_seed/masif_mimicry/runs
-```
-
-Replace `/shared/path` with the cluster path; do not copy the literal example.
-`array_tasks` may be any positive count up to the number of manifest entries.
-For example, `array_tasks: 500` emits `#SBATCH --array=0-499`. The optional
-`array_max_parallel: 50` changes that to `0-499%50`, which is useful for
-filesystem load and cluster policy. Set `array_max_parallel: 1` if the cluster
-must execute the shards strictly one at a time.
-
-Postprocessing is intentionally rejected in array mode because it operates on
-accepted poses rather than independent database shards. Run it later on the
-selected or merged search results.
-
-### 3. Submit with one command
-
-On an HPC login node, add the repository's lightweight host launcher to the
-shell path once per session:
-
-```bash
+cd /path/to/masif_seed
+export MASIF_SEED_ROOT="$(pwd -P)"
 export PATH="$MASIF_SEED_ROOT/masif_mimicry/bin:$PATH"
-```
 
-The launcher uses the SIF for configuration and workflow generation, adds all
-declared `runtime.binds`, and then calls the host's Slurm client automatically.
-No host Python environment is required:
-
-```bash
 masif-mimicry run \
   "$MASIF_SEED_ROOT/masif_mimicry/examples/job.slurm-array.yaml"
 ```
 
-The command prepares the deterministic shards, validates `submit.slurm`, calls
-`sbatch`, and prints the Slurm job ID. Use its `--dry-run` option only when you
-want to generate and inspect the files without submitting:
+The launcher handles Apptainer mounts, deterministic sharding, Slurm-script
+generation, validation, and `sbatch`. No host Python environment or manual
+`apptainer exec` command is required. Useful follow-up commands are:
 
 ```bash
-masif-mimicry run --dry-run \
-  "$MASIF_SEED_ROOT/masif_mimicry/examples/job.slurm-array.yaml"
+# Prepare without submitting.
+masif-mimicry run --dry-run path/to/job.yaml
+
+# Show completed array shards.
+masif-mimicry status path/to/run-directory
+
+# Resume an interrupted scan; completed shards are skipped.
+masif-mimicry run path/to/job.yaml
 ```
 
-`runtime.submit: true` documents that the normal intent is immediate
-submission. The host launcher is responsible for submission because Slurm and
-Apptainer belong to the host; they do not need to be installed again inside
-the SIF.
-
-### Alternative: install the CLI on the login node
-
-If preferred, a small host-side CLI environment can also write and submit the
-Slurm script. Scientific computation still happens entirely in the SIF:
-
-```bash
-cd "$MASIF_SEED_ROOT/masif_mimicry"
-python3 -m venv .venv
-. .venv/bin/activate
-python -m pip install -e .
-
-masif-mimicry validate my-screen/job.slurm.yaml
-masif-mimicry doctor my-screen/job.slurm.yaml
-masif-mimicry run --dry-run my-screen/job.slurm.yaml
-```
-
-The last command creates
-`runs/whole-human-proteome/submit.slurm`, 500 deterministic shard files, and
-`inputs/array-plan.json`, which records the protein-list checksum and array
-size. Review and submit it from its run directory:
-
-```bash
-cd "$MASIF_SEED_ROOT/masif_mimicry/runs/whole-human-proteome"
-bash -n submit.slurm
-sbatch submit.slurm
-```
-
-Alternatively, set `runtime.submit: true` and run `masif-mimicry run` without
-`--dry-run`; the CLI then calls `sbatch` for you. If installing the lightweight
-CLI on the login node is not allowed, generate the files through the SIF while
-preserving the host paths, then submit on the host:
-
-```bash
-apptainer exec \
-  --bind "$MASIF_SEED_ROOT:$MASIF_SEED_ROOT" \
-  "$MIMICRY_IMAGE" \
-  masif-mimicry run --dry-run \
-  "$MASIF_SEED_ROOT/masif_mimicry/my-screen/job.slurm.yaml"
-```
-
-### 4. Monitor and resume
-
-```bash
-masif-mimicry status \
-  "$MASIF_SEED_ROOT/masif_mimicry/runs/whole-human-proteome"
-squeue -j JOB_ID
-```
-
-To retry failed or interrupted work, run `sbatch submit.slurm` again. Completed
-indices exit immediately; missing completion markers run normally. To retry a
-specific failed range, use Slurm's override, for example
-`sbatch --array=17,42,81-90 submit.slurm`. If the protein manifest or
-`array_tasks` changes after any shard completes, the CLI refuses to regenerate
-the run under the same name. Choose a new `name` so old markers cannot be
-mistaken for the new work.
+`array_tasks` controls the number of deterministic shards, while
+`array_max_parallel` optionally limits how many may run simultaneously.
+Postprocessing must remain disabled for the array scan and can be run later on
+selected hits.
 
 ## Constructing the human-proteome seed database
 

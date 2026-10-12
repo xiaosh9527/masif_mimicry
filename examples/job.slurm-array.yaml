@@ -1,8 +1,8 @@
-# LPDI HPC template. Change both /scratch and /work paths on other clusters.
+# Replace /shared/path with storage visible on the login and compute nodes.
 name: whole-human-proteome
 
 target:
-  structure: /scratch/shxiao/masif_seed/masif_mimicry/data/template/input/6h0g.pdb
+  structure: /shared/path/masif_seed/masif_mimicry/data/template/input/6h0g.pdb
   pdb_id: 6h0g
   query_chain: C
   receptor_chain: B
@@ -11,7 +11,7 @@ target:
 
 database:
   name: masif_human_proteome
-  protein_list: /scratch/shxiao/masif_seed/masif/data/masif_human_proteome/lists/hp_list.txt
+  protein_list: /shared/path/masif_seed/masif/data/masif_human_proteome/lists/processed-proteins.txt
 
 search:
   preset: balanced
@@ -22,11 +22,10 @@ postprocessing:
 
 runtime:
   backend: slurm
-  suite_root: /scratch/shxiao/masif_seed
-  image: /scratch/shxiao/masif_seed/masif_mimicry/masif_mimicry.sif
-  # The database path under suite_root is a symlink to this real directory.
-  binds:
-    - /work/lpdi/users/shxiao/masif_seed/masif/data/masif_human_proteome_domains_merged
+  suite_root: /shared/path/masif_seed
+  image: /shared/path/masif_seed/masif_mimicry/masif_mimicry.sif
+  # Add resolved external-storage roots when database paths are symlinks.
+  binds: []
   submit: true
   slurm:
     nodes: 1
@@ -40,4 +39,4 @@ runtime:
     output: logs/%x-%A_%a.out
     # array_max_parallel: 50
 
-output_root: /scratch/shxiao/masif_seed/masif_mimicry/runs
+output_root: /shared/path/masif_seed/masif_mimicry/runs

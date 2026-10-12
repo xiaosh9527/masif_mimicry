@@ -7,8 +7,9 @@ Usage: masif-mimicry run [--dry-run] JOB.yaml
        masif-mimicry status RUN_DIRECTORY
 
 Prepare a Slurm run through the MaSIF-mimicry SIF and submit it with the
-host's sbatch command, or show progress for an existing run. Set MIMICRY_IMAGE
-to override the default SIF path.
+host's sbatch command, run a local job through Apptainer or Docker, or show
+progress for an existing run. Set MIMICRY_IMAGE or MIMICRY_DOCKER_IMAGE to
+override the default images.
 EOF
 }
 
@@ -23,8 +24,26 @@ if [[ ${1:-} == "status" ]]; then
     project_root=$(cd -- "$launcher_dir/.." && pwd -P)
     default_suite_root=$(cd -- "$project_root/.." && pwd -P)
     bootstrap_image=${MIMICRY_IMAGE:-"$project_root/masif_mimicry.sif"}
+    docker_image=${MIMICRY_DOCKER_IMAGE:-"ghcr.io/xiaosh9527/masif-mimicry:v2.0"}
+    if { ! command -v apptainer >/dev/null || [[ ! -f $bootstrap_image ]]; } && \
+        command -v docker >/dev/null; then
+        case $run_directory in
+            "$default_suite_root"/*)
+                container_run_directory=/workspace/${run_directory#"$default_suite_root"/}
+                ;;
+            *)
+                echo "Run directory must be inside $default_suite_root" >&2
+                exit 2
+                ;;
+        esac
+        exec docker run --rm --platform linux/amd64 \
+            --volume "$default_suite_root:/workspace" \
+            --env PYTHONPATH=/workspace/masif_mimicry/src \
+            "$docker_image" \
+            /usr/local/bin/masif-mimicry status "$container_run_directory"
+    fi
     command -v apptainer >/dev/null || {
-        echo "Apptainer was not found on the host." >&2
+        echo "Neither a usable Apptainer installation nor Docker was found." >&2
         exit 1
     }
     [[ -f $bootstrap_image ]] || {
@@ -59,9 +78,35 @@ launcher_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 project_root=$(cd -- "$launcher_dir/.." && pwd -P)
 default_suite_root=$(cd -- "$project_root/.." && pwd -P)
 bootstrap_image=${MIMICRY_IMAGE:-"$project_root/masif_mimicry.sif"}
+docker_image=${MIMICRY_DOCKER_IMAGE:-"ghcr.io/xiaosh9527/masif-mimicry:v2.0"}
+
+if { ! command -v apptainer >/dev/null || [[ ! -f $bootstrap_image ]]; } && \
+    command -v docker >/dev/null; then
+    case $job_file in
+        "$default_suite_root"/*)
+            container_job_file=/workspace/${job_file#"$default_suite_root"/}
+            ;;
+        *)
+            echo "Job file must be inside $default_suite_root" >&2
+            exit 2
+            ;;
+    esac
+    docker_command=(
+        docker run --rm --platform linux/amd64
+        --volume "$default_suite_root:/workspace"
+        --env PYTHONPATH=/workspace/masif_mimicry/src
+        "$docker_image"
+        /usr/local/bin/masif-mimicry run
+    )
+    if [[ $dry_run == true ]]; then
+        docker_command+=(--dry-run)
+    fi
+    docker_command+=("$container_job_file")
+    exec "${docker_command[@]}"
+fi
 
 command -v apptainer >/dev/null || {
-    echo "Apptainer was not found on the host." >&2
+    echo "Neither a usable Apptainer installation nor Docker was found." >&2
     exit 1
 }
 [[ -f $bootstrap_image ]] || {
@@ -103,13 +148,40 @@ run_dir=${config_values[2]}
 backend=${config_values[3]}
 additional_binds=("${config_values[@]:4}")
 
-[[ $backend == "slurm" ]] || {
-    echo "The HPC launcher requires runtime.backend: slurm." >&2
-    exit 2
-}
 [[ -f $runtime_image ]] || {
     echo "Configured container image not found: $runtime_image" >&2
     exit 1
+}
+
+if [[ $backend == "local" ]]; then
+    case $job_file in
+        "$default_suite_root"/*)
+            container_job_file=/workspace/${job_file#"$default_suite_root"/}
+            ;;
+        *)
+            echo "Local job file must be inside $default_suite_root" >&2
+            exit 2
+            ;;
+    esac
+    local_args=(exec --bind "$default_suite_root:/workspace")
+    for bind_root in "${additional_binds[@]}"; do
+        local_args+=(--bind "$bind_root:$bind_root")
+    done
+    local_args+=(
+        --env PYTHONPATH=/workspace/masif_mimicry/src
+        "$runtime_image"
+        /usr/local/bin/masif-mimicry run
+    )
+    if [[ $dry_run == true ]]; then
+        local_args+=(--dry-run)
+    fi
+    local_args+=("$container_job_file")
+    exec apptainer "${local_args[@]}"
+fi
+
+[[ $backend == "slurm" ]] || {
+    echo "The launcher supports runtime.backend values local and slurm." >&2
+    exit 2
 }
 
 apptainer_args=(exec --bind "$suite_root:$suite_root")

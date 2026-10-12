@@ -25,6 +25,7 @@ git clone --branch v2.0 https://github.com/xiaosh9527/masif_mimicry.git
 
 export MASIF_SEED_ROOT="$(pwd -P)"
 export MIMICRY_IMAGE="$MASIF_SEED_ROOT/masif_mimicry/masif_mimicry.sif"
+export PATH="$MASIF_SEED_ROOT/masif_mimicry/bin:$PATH"
 ```
 
 `MASIF_SEED_ROOT` is derived from the checkout location, so the remaining
@@ -50,6 +51,10 @@ The container is Linux `amd64`; the host options are:
 | Intel macOS | Docker Desktop | Apptainer requires a Linux VM |
 | Apple Silicon macOS | Docker Desktop with `linux/amd64` emulation | Use x86-64 HPC for production runs |
 | Windows | Docker Desktop through WSL2 | Native Windows execution is not supported |
+
+The same one-command interface is used on supported platforms. The launcher
+selects the local SIF through Apptainer when available and otherwise uses the
+published Docker image. Users do not need to write container mounts manually.
 
 ### Apptainer
 
@@ -88,6 +93,26 @@ apptainer exec "$MIMICRY_IMAGE" \
   /opt/conda/envs/bonsai/bin/python --version
 ```
 
+After the human-proteome example seed has been prepared, run the included
+example with one command:
+
+```bash
+masif-mimicry run \
+  "$MASIF_SEED_ROOT/masif_mimicry/examples/job.container.yaml"
+```
+
+Results are written to
+`$MASIF_SEED_ROOT/masif_mimicry/runs/znf692-vs-mtor/`. Check progress with:
+
+```bash
+masif-mimicry status \
+  "$MASIF_SEED_ROOT/masif_mimicry/runs/znf692-vs-mtor"
+```
+
+The explicit `apptainer exec` commands below are optional diagnostics for
+checking an image or troubleshooting a mount; they are not required for normal
+pipeline use.
+
 Bind the complete `masif_seed` checkout to `/workspace` and check that all
 three source directories are visible:
 
@@ -116,7 +141,7 @@ apptainer exec --bind "$MASIF_SEED_ROOT:/workspace" "$MIMICRY_IMAGE" \
   /workspace/masif_mimicry/examples/job.container.yaml
 ```
 
-Run the example:
+Equivalent manual execution for troubleshooting:
 
 ```bash
 apptainer exec --bind "$MASIF_SEED_ROOT:/workspace" "$MIMICRY_IMAGE" \
@@ -124,8 +149,7 @@ apptainer exec --bind "$MASIF_SEED_ROOT:/workspace" "$MIMICRY_IMAGE" \
   /workspace/masif_mimicry/examples/job.container.yaml
 ```
 
-Results are written to
-`$MASIF_SEED_ROOT/masif_mimicry/runs/znf692-vs-mtor/`. Inspect progress with:
+Manual status inspection:
 
 ```bash
 apptainer exec --bind "$MASIF_SEED_ROOT:/workspace" "$MIMICRY_IMAGE" \
@@ -156,9 +180,15 @@ yourself or set `runtime.submit: true`.
 
 ### Docker workstation equivalent
 
-On a workstation without Apptainer, use the same published image directly with
-Docker. The complete checkout is mounted at the same `/workspace` path, so job
-files do not change between Docker and Apptainer:
+On a workstation without Apptainer, ensure Docker Desktop is running and use
+the same launcher command shown above. It automatically uses this image:
+
+```text
+ghcr.io/xiaosh9527/masif-mimicry:v2.0
+```
+
+Override it when necessary with `MIMICRY_DOCKER_IMAGE`. The following explicit
+Docker commands are optional diagnostics equivalent to what the launcher does:
 
 ```bash
 docker pull --platform linux/amd64 \

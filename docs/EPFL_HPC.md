@@ -100,28 +100,3 @@ masif-mimicry status \
 ```
 
 Repeat the same `run` command to resume. Completed shards are skipped.
-
-## Locale warning
-
-Warnings that mention `LC_ALL` and `en_US.UTF-8` come from the login-shell
-configuration; they are not MaSIF or Slurm failures. Check the current settings
-and available locales:
-
-```bash
-grep -nE 'LC_ALL|LANG' ~/.bashrc ~/.bash_profile 2>/dev/null
-LC_ALL=C locale -a
-```
-
-Replace a permanent `export LC_ALL=en_US.UTF-8` setting with the portable:
-
-```bash
-export LANG=C
-unset LC_ALL
-```
-
-If the cluster lists `C.UTF-8` or `C.utf8`, that exact value can be used for
-`LANG` when UTF-8 is required. Reload the shell afterward:
-
-```bash
-exec bash -l
-```

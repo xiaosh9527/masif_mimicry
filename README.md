@@ -281,7 +281,8 @@ array as described below instead of placing thousands of values in YAML.
 
 The array mode divides one ordered protein manifest into deterministic,
 round-robin shards. Every Slurm task reads one shard and writes to its own
-`results/shards/<array-index>/` and `tmp/shards/<array-index>/` directories.
+protein/PDB-ID folder under `results/`. Temporary files remain
+isolated under `tmp/shards/<array-index>/`.
 After a task succeeds it creates `state/shards/<array-index>.complete`.
 Resubmitting the same generated script skips completed tasks, so an interrupted
 screen can be resumed without repeating successful shards.
@@ -390,11 +391,42 @@ Postprocessing is intentionally rejected in array mode because it operates on
 accepted poses rather than independent database shards. Run it later on the
 selected or merged search results.
 
-### 3. Generate, inspect, and submit
+### 3. Submit with one command
 
-The cleanest HPC setup is a small host-side CLI environment used only to write
-and submit the Slurm script. Scientific computation still happens entirely in
-the SIF:
+On an HPC login node, add the repository's lightweight host launcher to the
+shell path once per session:
+
+```bash
+export PATH="$MASIF_SEED_ROOT/masif_mimicry/bin:$PATH"
+```
+
+The launcher uses the SIF for configuration and workflow generation, adds all
+declared `runtime.binds`, and then calls the host's Slurm client automatically.
+No host Python environment is required:
+
+```bash
+masif-mimicry run \
+  "$MASIF_SEED_ROOT/masif_mimicry/examples/job.slurm-array.yaml"
+```
+
+The command prepares the deterministic shards, validates `submit.slurm`, calls
+`sbatch`, and prints the Slurm job ID. Use its `--dry-run` option only when you
+want to generate and inspect the files without submitting:
+
+```bash
+masif-mimicry run --dry-run \
+  "$MASIF_SEED_ROOT/masif_mimicry/examples/job.slurm-array.yaml"
+```
+
+`runtime.submit: true` documents that the normal intent is immediate
+submission. The host launcher is responsible for submission because Slurm and
+Apptainer belong to the host; they do not need to be installed again inside
+the SIF.
+
+### Alternative: install the CLI on the login node
+
+If preferred, a small host-side CLI environment can also write and submit the
+Slurm script. Scientific computation still happens entirely in the SIF:
 
 ```bash
 cd "$MASIF_SEED_ROOT/masif_mimicry"
@@ -627,7 +659,7 @@ runs/<name>/
 ├── run.sh|submit.slurm  # generated execution script
 ├── inputs/              # seed list, or deterministic array shards and plan
 ├── data/target -> shared target cache
-├── results/             # array outputs are isolated under results/shards/<id>
+├── results/<protein-id>/ # array output structures and CSV for each protein
 ├── state/shards/        # successful-array-task completion markers
 ├── postprocess/
 ├── truncate-86/

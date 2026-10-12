@@ -41,6 +41,7 @@ def create_parser():
 
     # Output and runtime
     p.add_argument("--output_dir", type=str, default='.', help="Output directory")
+    p.add_argument("--flat_output", action='store_true', help="Write protein folders directly below output_dir")
     p.add_argument("--output_postfix", type=str, default='out', help="Subfolder postfix for outputs")
     p.add_argument("--count_clashes", action='store_true', help="Compute clashes (slower)")
     p.add_argument("--ca_clash_threshold", type=float, default=100, help="CA clash threshold")
@@ -100,8 +101,13 @@ def main(args):
             print(f'Searching sites similar to {P2} from {",".join(set(lines))}. \nWARNING: Exhausitive alignment mode. This will go through {len(P2_selected_points_idx)} points and will take some time...')
 
     scores = {}
-    os.makedirs(os.path.join(args.output_dir, f'{P2}_{args.output_postfix}'), exist_ok=True)
-    shutil.copy(P2_all_feats['pdb'], os.path.join(args.output_dir, f'{P2}_{args.output_postfix}', f'{P2.split("_")[0]}_{args.target_chain}.pdb'))
+    if args.flat_output:
+        result_root = args.output_dir
+    else:
+        result_root = os.path.join(args.output_dir, f'{P2}_{args.output_postfix}')
+    os.makedirs(result_root, exist_ok=True)
+    if not args.flat_output:
+        shutil.copy(P2_all_feats['pdb'], os.path.join(result_root, f'{P2.split("_")[0]}_{args.target_chain}.pdb'))
 
     for P1 in lines:
         scores[(P1, P2)] = {
@@ -174,7 +180,7 @@ def main(args):
                         target_pcd=P2_all_feats['pcd'], target_patch_idxs=P2_all_feats['indices'], target_descs=P2_all_feats['desc'], binder_align=False
                     )
 
-                    output_root = os.path.join(args.output_dir, f'{P2}_{args.output_postfix}/{P1}')
+                    output_root = os.path.join(result_root, P1)
                     for j, (result, P1_center) in enumerate(zip(all_results, P1_selected_points_idx_final)):
                         out_filename_base = f'{P1}_{ppi_id}_{P1_center}_to_{P2}_{args.target_ppi_id}_{P2_center}'
 
@@ -204,7 +210,8 @@ def main(args):
                             if target_structure is not None:
                                 io = PDBIO()
                                 io.set_structure(target_structure)
-                                io.save(os.path.join(args.output_dir, f'{P2}_{args.output_postfix}', f'{(P2.split("_")[0])}_{P2_p2_chain}.pdb'))
+                                target_output_root = output_root if args.flat_output else result_root
+                                io.save(os.path.join(target_output_root, f'{(P2.split("_")[0])}_{P2_p2_chain}.pdb'))
 
                             shutil.move(os.path.join(local_tmp_dir, f'{out_filename_base}.pdb'), os.path.join(output_root, f'{out_filename_base}.pdb'))
                             # P1_raw_pdb = os.path.join(params['top_seed_dir'], 'data_preparation', '00-raw_pdbs', f'{P1.split("_")[0]}.pdb')

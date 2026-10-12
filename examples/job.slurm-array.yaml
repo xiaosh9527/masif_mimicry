@@ -27,7 +27,7 @@ runtime:
   # The database path under suite_root is a symlink to this real directory.
   binds:
     - /work/lpdi/users/shxiao/masif_seed/masif/data/masif_human_proteome_domains_merged
-  submit: false
+  submit: true
   slurm:
     nodes: 1
     qos: serial

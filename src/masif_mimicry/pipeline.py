@@ -63,10 +63,7 @@ def database_proteins(job: JobConfig) -> list[str]:
 
 
 def _replace_shell_tokens(command: str) -> str:
-    return (
-        command.replace("__MASIF_SEED_SHARD__", '"$MASIF_SEED_SHARD"')
-        .replace("__MASIF_SHARD_RESULT_DIR__", '"$MASIF_SHARD_RESULT_DIR"')
-    )
+    return command.replace("__MASIF_SEED_SHARD__", '"$MASIF_SEED_SHARD"')
 
 
 def build_commands(job: JobConfig) -> list[str]:
@@ -123,18 +120,16 @@ def build_commands(job: JobConfig) -> list[str]:
     if array_scan:
         c_shard_dir = command_path(job, run_dir / "inputs" / "seed-shards")
         c_state_dir = command_path(job, run_dir / "state" / "shards")
-        c_shard_results = command_path(job, result_dir / "shards")
         c_shard_tmp = command_path(job, tmp_dir / "shards")
         commands.extend(
             [
                 'export MASIF_ARRAY_TASK_ID="${SLURM_ARRAY_TASK_ID:?SLURM_ARRAY_TASK_ID is required}"',
                 f"printf -v MASIF_SEED_SHARD '%s/%s.txt' {_q(c_shard_dir)} \"$MASIF_ARRAY_TASK_ID\"",
-                f"printf -v MASIF_SHARD_RESULT_DIR '%s/%s' {_q(c_shard_results)} \"$MASIF_ARRAY_TASK_ID\"",
                 f"printf -v MASIF_SHARD_TMP_DIR '%s/%s' {_q(c_shard_tmp)} \"$MASIF_ARRAY_TASK_ID\"",
                 f"printf -v MASIF_SHARD_DONE '%s/%s.complete' {_q(c_state_dir)} \"$MASIF_ARRAY_TASK_ID\"",
                 'if [[ -f "$MASIF_SHARD_DONE" ]]; then echo "Shard $MASIF_ARRAY_TASK_ID already complete; skipping."; exit 0; fi',
                 'test -s "$MASIF_SEED_SHARD" || { echo "Missing or empty shard: $MASIF_SEED_SHARD" >&2; exit 1; }',
-                'mkdir -p "$MASIF_SHARD_RESULT_DIR" "$MASIF_SHARD_TMP_DIR"',
+                'mkdir -p "$MASIF_SHARD_TMP_DIR"',
                 'export TMPDIR="$MASIF_SHARD_TMP_DIR"',
             ]
         )
@@ -179,12 +174,12 @@ def build_commands(job: JobConfig) -> list[str]:
         "--heavy_atom_clash_threshold",
         params["heavy_atom_clash_threshold"],
         "--output_dir",
-        "__MASIF_SHARD_RESULT_DIR__" if array_scan else c_result_dir,
+        c_result_dir,
         "--output_postfix",
         job.name,
     ]
     if array_scan:
-        search.extend(["--split_seed_list", "__MASIF_SEED_SHARD__"])
+        search.extend(["--split_seed_list", "__MASIF_SEED_SHARD__", "--flat_output"])
     elif len(proteins) == 1:
         search.extend(["--seed_pdb", proteins[0]])
     else:

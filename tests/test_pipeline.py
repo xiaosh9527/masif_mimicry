@@ -152,7 +152,9 @@ def test_prepare_run_writes_deterministic_restartable_shards(tmp_path: Path):
     assert 'SLURM_ARRAY_TASK_ID' in script
     assert 'Shard $MASIF_ARRAY_TASK_ID already complete; skipping.' in script
     assert 'touch "$MASIF_SHARD_DONE"' in script
-    assert 'results/shards' in script
+    assert 'results/shards' not in script
+    assert '--output_dir /workspace/masif_mimicry/runs/proteome-scan/results' in script
+    assert '--flat_output' in script
     assert 'tmp/shards' in script
 
 

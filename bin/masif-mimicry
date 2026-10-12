@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+    cat <<'EOF'
+Usage: masif-mimicry run [--dry-run] JOB.yaml
+
+Prepare a Slurm run through the MaSIF-mimicry SIF and submit it with the
+host's sbatch command. Set MIMICRY_IMAGE to override the default SIF path.
+EOF
+}
+
+if [[ ${1:-} != "run" ]]; then
+    usage >&2
+    exit 2
+fi
+shift
+
+dry_run=false
+if [[ ${1:-} == "--dry-run" ]]; then
+    dry_run=true
+    shift
+fi
+if [[ $# -ne 1 ]]; then
+    usage >&2
+    exit 2
+fi
+
+job_file=$(realpath "$1")
+launcher_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+project_root=$(cd -- "$launcher_dir/.." && pwd -P)
+default_suite_root=$(cd -- "$project_root/.." && pwd -P)
+bootstrap_image=${MIMICRY_IMAGE:-"$project_root/masif_mimicry.sif"}
+
+command -v apptainer >/dev/null || {
+    echo "Apptainer was not found on the host." >&2
+    exit 1
+}
+[[ -f $bootstrap_image ]] || {
+    echo "Container image not found: $bootstrap_image" >&2
+    exit 1
+}
+
+read_config='import pathlib, sys, yaml
+job = pathlib.Path(sys.argv[1]).resolve()
+raw = yaml.safe_load(job.read_text())
+base = job.parent
+def absolute(value):
+    path = pathlib.Path(value).expanduser()
+    return path if path.is_absolute() else (base / path).resolve()
+runtime = raw["runtime"]
+print(absolute(runtime["suite_root"]))
+print(absolute(runtime.get("image") or sys.argv[2]))
+print(absolute(raw.get("output_root", "runs")) / raw["name"])
+print(runtime.get("backend", "slurm"))
+for path in runtime.get("binds", []):
+    print(absolute(path))'
+
+bootstrap_args=(exec --bind "$default_suite_root:$default_suite_root")
+if [[ $job_file != "$default_suite_root/"* ]]; then
+    job_dir=$(dirname -- "$job_file")
+    bootstrap_args+=(--bind "$job_dir:$job_dir")
+fi
+config_output=$(
+    apptainer "${bootstrap_args[@]}" \
+        "$bootstrap_image" \
+        /opt/conda/envs/bonsai/bin/python -c "$read_config" \
+        "$job_file" "$bootstrap_image"
+)
+mapfile -t config_values <<< "$config_output"
+
+suite_root=${config_values[0]}
+runtime_image=${config_values[1]}
+run_dir=${config_values[2]}
+backend=${config_values[3]}
+additional_binds=("${config_values[@]:4}")
+
+[[ $backend == "slurm" ]] || {
+    echo "The HPC launcher requires runtime.backend: slurm." >&2
+    exit 2
+}
+[[ -f $runtime_image ]] || {
+    echo "Configured container image not found: $runtime_image" >&2
+    exit 1
+}
+
+apptainer_args=(exec --bind "$suite_root:$suite_root")
+for bind_root in "${additional_binds[@]}"; do
+    apptainer_args+=(--bind "$bind_root:$bind_root")
+done
+apptainer_args+=(
+    --env "PYTHONPATH=$suite_root/masif_mimicry/src"
+    "$runtime_image"
+    /usr/local/bin/masif-mimicry run --dry-run "$job_file"
+)
+
+apptainer "${apptainer_args[@]}"
+
+if [[ $dry_run == true ]]; then
+    echo "Prepared without submission: $run_dir/submit.slurm"
+    exit 0
+fi
+
+command -v sbatch >/dev/null || {
+    echo "Slurm sbatch was not found on the host." >&2
+    exit 1
+}
+[[ -f $run_dir/submit.slurm ]] || {
+    echo "Generated Slurm script not found: $run_dir/submit.slurm" >&2
+    exit 1
+}
+
+(
+    cd "$run_dir"
+    bash -n submit.slurm
+    sbatch submit.slurm
+)

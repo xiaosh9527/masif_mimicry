@@ -1,3 +1,10 @@
+# Portions of this file were adapted from MaSIF-seed:
+# https://github.com/LPDI-EPFL/masif_seed/blob/main/masif_seed_search/source/alignment_utils.py
+# Copyright 2019 - Gainza P, Sverrisson F, Monti F, Rodola, Bronstein MM, Correia BE
+# Licensed under the Apache License, Version 2.0.
+# Modified for MaSIF-mimicry in 2025-2026.
+# See LICENSES/Apache-2.0.txt and THIRD_PARTY_NOTICES.md.
+
 import os
 import numpy as np
 import open3d as o3d

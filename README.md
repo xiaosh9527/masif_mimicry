@@ -574,4 +574,8 @@ APBS surface-charge calculation is the main preprocessing bottleneck. A distribu
 
 ## License and citation
 
-MaSIF-mimicry is released under the Apache License 2.0. If you use it, cite [*Proteome-wide identification of the druggable CRBN interactome*](https://www.nature.com/articles/s41587-026-03237-7).
+Original MaSIF-mimicry code is released under the [MIT License](LICENSE).
+
+MaSIF-mimicry builds on [MaSIF](https://github.com/LPDI-EPFL/masif) and [MaSIF-seed](https://github.com/LPDI-EPFL/masif_seed), which are licensed under the Apache License 2.0. Portions adapted from those projects remain under Apache 2.0; see the [third-party notices](THIRD_PARTY_NOTICES.md) and the included [Apache License 2.0](LICENSES/Apache-2.0.txt). Other third-party dependencies retain their respective licenses.
+
+If you use MaSIF-mimicry, cite [*Proteome-wide identification of the druggable CRBN interactome*](https://www.nature.com/articles/s41587-026-03237-7).

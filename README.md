@@ -8,10 +8,7 @@ MaSIF-mimicry searches protein surfaces for patches that resemble a target inter
 > MaSIF-mimicry depends on the upstream
 > [`LPDI-EPFL/masif_seed`](https://github.com/LPDI-EPFL/masif_seed.git)
 > repository. MaSIF-mimicry has been tested on x86 Linux. Run
-> `masif-mimicry doctor job.yaml` before starting a long job. Also verify that
-> your downloaded
-> neural-network checkpoint is finite; see the open
-> [checkpoint reproducibility report](https://github.com/xiaosh9527/masif_mimicry/issues/3).
+> `masif-mimicry doctor job.yaml` before starting a long job.
 
 ## Portable quick start
 

@@ -1,0 +1,236 @@
+from __future__ import annotations
+
+from enum import Enum
+from pathlib import Path
+from typing import Any, Literal
+
+import yaml
+from pydantic import BaseModel, Field, model_validator
+
+
+class SearchPreset(str, Enum):
+    fast = "fast"
+    balanced = "balanced"
+    sensitive = "sensitive"
+
+
+PRESETS: dict[SearchPreset, dict[str, float | int]] = {
+    SearchPreset.fast: {
+        "downsample": 5,
+        "descriptor_distance_cutoff": 1.5,
+        "mimicry_score_cutoff": 0.45,
+    },
+    SearchPreset.balanced: {
+        "downsample": 3,
+        "descriptor_distance_cutoff": 2.0,
+        "mimicry_score_cutoff": 0.4,
+    },
+    SearchPreset.sensitive: {
+        "downsample": 1,
+        "descriptor_distance_cutoff": 2.0,
+        "mimicry_score_cutoff": 0.35,
+    },
+}
+
+
+class Focus(BaseModel):
+    residue: int = Field(gt=0)
+    atom: str = Field(default="CA", min_length=1)
+
+
+class Target(BaseModel):
+    structure: Path
+    pdb_id: str | None = None
+    query_chain: str = Field(min_length=1)
+    receptor_chain: str | None = Field(default=None, min_length=1)
+    focus: Focus | None = None
+    ligand: str | None = Field(default=None, pattern=r"^[^:]+:[^:]+$")
+
+    @model_validator(mode="after")
+    def infer_pdb_id(self) -> Target:
+        if self.pdb_id is None:
+            self.pdb_id = self.structure.stem
+        return self
+
+    @property
+    def processed_id(self) -> str:
+        chains = self.query_chain
+        if self.receptor_chain:
+            chains += f"_{self.receptor_chain}"
+        return f"{self.pdb_id}_{chains}"
+
+
+class Database(BaseModel):
+    name: str = "masif_human_proteome"
+    proteins: list[str] = Field(default_factory=list)
+    protein_list: Path | None = None
+    root: Path | None = None
+
+    @model_validator(mode="after")
+    def require_one_protein_source(self) -> Database:
+        if bool(self.proteins) == bool(self.protein_list):
+            raise ValueError("set exactly one of database.proteins or database.protein_list")
+        return self
+
+
+class Search(BaseModel):
+    preset: SearchPreset = SearchPreset.balanced
+    downsample: int | None = Field(default=None, gt=0)
+    descriptor_distance_cutoff: float | None = Field(default=None, gt=0)
+    mimicry_score_cutoff: float | None = Field(default=None, ge=0, le=1)
+    interface_cutoff: float = Field(default=0.0, ge=0, le=1)
+    top_interface_percent: float = Field(default=0.0, ge=0, le=100)
+    number_of_points: int = Field(default=5, gt=0)
+    interface_only: bool = False
+    count_clashes: bool = True
+    ca_clash_threshold: float = Field(default=1.0, ge=0)
+    heavy_atom_clash_threshold: float = Field(default=5.0, ge=0)
+
+    def resolved(self) -> dict[str, Any]:
+        values = dict(PRESETS[self.preset])
+        if self.downsample is not None:
+            values["downsample"] = self.downsample
+        if self.descriptor_distance_cutoff is not None:
+            values["descriptor_distance_cutoff"] = self.descriptor_distance_cutoff
+        if self.mimicry_score_cutoff is not None:
+            values["mimicry_score_cutoff"] = self.mimicry_score_cutoff
+        values.update(
+            interface_cutoff=self.interface_cutoff,
+            top_interface_percent=self.top_interface_percent,
+            number_of_points=self.number_of_points,
+            interface_only=self.interface_only,
+            count_clashes=self.count_clashes,
+            ca_clash_threshold=self.ca_clash_threshold,
+            heavy_atom_clash_threshold=self.heavy_atom_clash_threshold,
+        )
+        return values
+
+
+class Postprocessing(BaseModel):
+    enabled: bool = True
+    truncation_length: int = Field(default=86, gt=0)
+
+
+class SlurmResources(BaseModel):
+    nodes: int = Field(default=1, gt=0)
+    ntasks_per_node: int = Field(default=1, gt=0)
+    partition: str | None = Field(default=None, pattern=r"^[^\r\n]+$")
+    qos: str | None = Field(default=None, pattern=r"^[^\r\n]+$")
+    job_name: str | None = Field(default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+    cpus: int = Field(default=4, gt=0)
+    memory: str = Field(default="24G", pattern=r"^[^\s\r\n]+$")
+    time: str = Field(default="24:00:00", pattern=r"^\d{1,3}:\d{2}:\d{2}$")
+    output: str | None = Field(default=None, pattern=r"^[^\r\n]+$")
+    array_tasks: int | None = Field(default=None, gt=0)
+    array_max_parallel: int | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def require_array_for_concurrency_limit(self) -> SlurmResources:
+        if self.array_max_parallel is not None and self.array_tasks is None:
+            raise ValueError("slurm.array_max_parallel requires slurm.array_tasks")
+        return self
+
+
+class Runtime(BaseModel):
+    backend: Literal["local", "apptainer", "slurm"] = "slurm"
+    suite_root: Path
+    image: Path | None = None
+    binds: list[Path] = Field(default_factory=list)
+    submit: bool = False
+    slurm: SlurmResources = Field(default_factory=SlurmResources)
+
+    @model_validator(mode="after")
+    def require_image_for_container_backends(self) -> Runtime:
+        if self.backend in {"apptainer", "slurm"} and self.image is None:
+            raise ValueError(f"runtime.image is required for the {self.backend} backend")
+        if self.slurm.array_tasks is not None and self.backend != "slurm":
+            raise ValueError("slurm.array_tasks requires runtime.backend: slurm")
+        return self
+
+
+class JobConfig(BaseModel):
+    name: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+    target: Target
+    database: Database
+    search: Search = Field(default_factory=Search)
+    postprocessing: Postprocessing = Field(default_factory=Postprocessing)
+    runtime: Runtime
+    output_root: Path = Path("runs")
+
+    @model_validator(mode="after")
+    def validate_container_paths(self) -> JobConfig:
+        if self.runtime.slurm.array_tasks is not None and self.postprocessing.enabled:
+            raise ValueError(
+                "postprocessing must be disabled for Slurm array scans; "
+                "postprocess selected hits after the search completes"
+            )
+        if self.runtime.backend == "local":
+            return self
+        suite = self.runtime.suite_root.absolute()
+        resolved_suite = self.runtime.suite_root.resolve()
+        bind_roots = [path.resolve() for path in self.runtime.binds]
+        paths = {
+            "target.structure": self.target.structure,
+            "output_root": self.output_root,
+        }
+        if self.database.root is not None:
+            paths["database.root"] = self.database.root
+        if self.database.protein_list is not None:
+            paths["database.protein_list"] = self.database.protein_list
+        for label, path in paths.items():
+            if not path.is_absolute():
+                continue
+            lexical_path = path.absolute()
+            resolved_path = path.resolve()
+            below_suite = lexical_path.is_relative_to(suite)
+            resolved_in_suite = resolved_path.is_relative_to(resolved_suite)
+            covered_by_bind = any(
+                resolved_path.is_relative_to(bind_root) for bind_root in bind_roots
+            )
+            if not ((below_suite and resolved_in_suite) or covered_by_bind):
+                raise ValueError(
+                    f"{label} ({path}) resolves to {resolved_path}, which must be below "
+                    f"runtime.suite_root ({suite}) or one of runtime.binds for container "
+                    "backends"
+                )
+        return self
+
+    def resolve_paths(self, base_dir: Path) -> JobConfig:
+        data = self.model_dump()
+        for section, key in (
+            ("target", "structure"),
+            ("database", "root"),
+            ("database", "protein_list"),
+            ("runtime", "suite_root"),
+            ("runtime", "image"),
+        ):
+            value = data[section].get(key)
+            if value is not None:
+                path = Path(value).expanduser()
+                data[section][key] = path if path.is_absolute() else (base_dir / path).resolve()
+        output = Path(data["output_root"]).expanduser()
+        data["output_root"] = output if output.is_absolute() else (base_dir / output).resolve()
+        data["runtime"]["binds"] = [
+            path if path.is_absolute() else (base_dir / path).resolve()
+            for value in data["runtime"].get("binds", [])
+            for path in [Path(value).expanduser()]
+        ]
+        return JobConfig.model_validate(data)
+
+    @property
+    def run_dir(self) -> Path:
+        return self.output_root / self.name
+
+
+def load_job(path: Path) -> JobConfig:
+    path = path.expanduser().resolve()
+    with path.open(encoding="utf-8") as handle:
+        raw = yaml.safe_load(handle)
+    if not isinstance(raw, dict):
+        raise TypeError("Job configuration must be a YAML mapping")
+    return JobConfig.model_validate(raw).resolve_paths(path.parent)
+
+
+def dump_job(job: JobConfig, path: Path) -> None:
+    data = job.model_dump(mode="json", exclude_none=True)
+    path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")

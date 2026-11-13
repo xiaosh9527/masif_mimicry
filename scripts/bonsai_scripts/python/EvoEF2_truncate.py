@@ -28,7 +28,7 @@ with open(CONFIG_PATH, 'r') as f:
     config = yaml.safe_load(f)
 
 paths_config = config['paths']
-EvoEF2_dir = paths_config['EvoEF2_dir']
+EvoEF2_dir = os.environ.get('EVOEF2_DIR', paths_config['EvoEF2_dir'])
 
 
 # List of 20 standard amino acid three-letter codes

@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "masif-mimicry"
+version = "0.2.0"
+description = "User-friendly workflows for MaSIF surface mimicry searches"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "Apache-2.0"}
+authors = [{name = "MaSIF-mimicry contributors"}]
+dependencies = [
+  "eval-type-backport>=0.2.2; python_version < '3.10'",
+  "pydantic>=2.7,<3",
+  "PyYAML>=6,<7",
+  "typer>=0.12,<1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.5"]
+ui = ["streamlit>=1.35,<2"]
+
+[project.scripts]
+masif-mimicry = "masif_mimicry.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/masif_mimicry"]
+
+[tool.hatch.build]
+include = [
+  "src/masif_mimicry/**/*.py",
+  "src/masif_mimicry/templates/*.yaml",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint.extend-per-file-ignores]
+"src/masif_mimicry/cli.py" = ["UP045"]

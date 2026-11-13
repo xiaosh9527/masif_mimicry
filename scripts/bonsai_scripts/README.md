@@ -16,7 +16,8 @@ The pipeline consists of several interconnected components:
 
 ## Usage Instructions
 
-1. **Setup**: Edit `scripts/bonsai_scripts/python/config.yaml` with your system paths and executables
+1. **Setup**: Build the repository Docker image. The Python 3.11 environment,
+   EvoEF2, STRIDE, and DeepTMHMM data are already included.
 
 2. **Configure Workflow**: Edit parameters in `scripts/bonsai_scripts/postprocessing_truncation_workflow_apptainer.sh`:
    - Set `WORK_DIR`, `TARGET_PDB_PATH`
@@ -34,7 +35,7 @@ The pipeline consists of several interconnected components:
 - **STRIDE**: Executable for secondary structure calculation
 - **EvoEF2**: Executable for protein folding free energy calculation
 - **SLURM**: Job scheduler for parallel processing
-- **Python packages**: BioPython, RDKit, pandas, numpy, scikit-image, networkx
+- **Python packages**: supplied by `/opt/conda/envs/bonsai` in the image
 
 ## Output Files
 
@@ -109,6 +110,11 @@ This is the master script that orchestrates the entire pipeline via SLURM helper
 ### `config.yaml`
 Contains system-specific paths and executable locations:
 - `deeptmhmm_dir`: Path to pre-computed DeepTMHMM predictions
-- `python_path`: Python executable path
 - `stride_exec`: STRIDE executable command
 - `EvoEF2_dir`: EvoEF2 installation directory
+
+The defaults point to `/opt` locations bundled in the image. Override them
+without editing this file by setting `DEEPTMHMM_DIR`, `STRIDE_EXEC`, or
+`EVOEF2_DIR`. Bonsai scripts run with
+`/opt/conda/envs/bonsai/bin/python`; MaSIF continues to use
+`/usr/local/bin/masif-python` (Python 3.6).

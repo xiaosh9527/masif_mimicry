@@ -1,57 +1,21 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-# Install these dependencies in the root directory of the repository
-# before running the postprocessing and truncation pipeline
-root=$(git rev-parse --show-toplevel)
-cd $root
+# Dependencies are installed while building the single project image. This
+# script remains as a compatibility entry point and validates that image.
+MASIF_PYTHON=${MASIF_PYTHON:-/usr/local/bin/masif-python}
+BONSAI_PYTHON=${BONSAI_PYTHON:-/opt/conda/envs/bonsai/bin/python}
+EVOEF2_DIR=${EVOEF2_DIR:-/opt/EvoEF2}
+STRIDE_EXEC=${STRIDE_EXEC:-/opt/stride/stride}
+DEEPTMHMM_DIR=${DEEPTMHMM_DIR:-/opt/deepTMHMM/out}
 
-#--------------------------------
-# Installation of conda environment
-#--------------------------------
+test -x "$MASIF_PYTHON"
+test -x "$BONSAI_PYTHON"
+test -x "$EVOEF2_DIR/EvoEF2"
+test -x "$STRIDE_EXEC"
+test -d "$DEEPTMHMM_DIR"
 
-echo "Creating bonsai conda environment"
-conda env create -f $root/scripts/bonsai_scripts/environment.yml
+"$MASIF_PYTHON" -c 'import sys; assert sys.version_info[:2] == (3, 6)'
+"$BONSAI_PYTHON" -c 'import sys; assert sys.version_info[:2] == (3, 11); import Bio, numpy, pandas, rdkit'
 
-echo "Activating bonsai conda environment"
-conda activate bonsai
-echo "Done"
-
-#--------------------------------
-# Installation of EvoEF2
-#--------------------------------
-# Clone from github repo
-echo "Cloning EvoEF2 from github repo"
-git clone https://github.com/tommyhuangthu/EvoEF2.git
-
-# build EvoEF2.cpp to executable
-echo "Building EvoEF2.cpp to executable"
-cd EvoEF2
-chmod +x ./build.sh
-./build.sh
-
-# Test if EvoEF2 executable is built successfully
-./EvoEF2 --help
-
-echo "Done"
-
-#--------------------------------
-# Installation of Stride
-#--------------------------------
-# wget the stride executable
-echo "Downloading Stride executable"
-cd ..
-mkdir -p stride
-cd stride
-wget https://webclu.bio.wzw.tum.de/stride/stride.tar.gz
-
-# untar the stride executable
-echo "Untaring Stride executable"
-tar -xzf stride.tar.gz
-
-# compile the stride executable
-make
-
-# test if stride executable is downloaded successfully
-./stride --help
-
-echo "Done"
+echo "The bundled MaSIF and bonsai runtimes are ready."

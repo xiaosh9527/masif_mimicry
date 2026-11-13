@@ -1,0 +1,45 @@
+name: znf692-vs-mtor
+
+target:
+  structure: inputs/6h0g.pdb
+  pdb_id: 6h0g
+  query_chain: C
+  receptor_chain: B
+  focus:
+    residue: 423
+    atom: CA
+  ligand: B:Y70
+
+database:
+  name: masif_human_proteome
+  proteins:
+    - P42345-F1-dom-01_A
+
+search:
+  preset: balanced
+  count_clashes: true
+
+postprocessing:
+  enabled: true
+  truncation_length: 86
+
+runtime:
+  # The normal mode when this CLI is invoked through Docker or Apptainer.
+  backend: local
+  suite_root: /workspace
+  # For symlinked databases on HPC, list each resolved external storage root.
+  binds: []
+  submit: false
+  slurm:
+    nodes: 1
+    ntasks_per_node: 1
+    cpus: 4
+    memory: 24G
+    time: "24:00:00"
+    # For a proteome scan, replace database.proteins with database.protein_list,
+    # disable postprocessing, select backend: slurm, and set array_tasks.
+    # qos: serial
+    # array_tasks: 500
+    # array_max_parallel: 50
+
+output_root: runs

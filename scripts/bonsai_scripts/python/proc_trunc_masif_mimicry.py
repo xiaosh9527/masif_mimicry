@@ -69,8 +69,8 @@ with open(CONFIG_PATH, 'r') as f:
     config = yaml.safe_load(f)
 
 paths_config = config['paths']
-deeptmhmm_dir = Path(paths_config['deeptmhmm_dir'])
-stride_exec = paths_config['stride_exec']
+deeptmhmm_dir = Path(os.environ.get('DEEPTMHMM_DIR', paths_config['deeptmhmm_dir']))
+stride_exec = os.environ.get('STRIDE_EXEC', paths_config['stride_exec'])
 
 
 # ------------------ Helper Functions ------------------

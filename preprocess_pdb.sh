@@ -85,11 +85,38 @@ export PYTHONPATH=$PYTHONPATH:$MASIF_SOURCE
 export PYTHONPATH=$PYTHONPATH:$OUTDIR
 OUTDIR="$(realpath $OUTDIR)"
 export TMPDIR=$OUTDIR/tmp/
+MASIF_PYTHON=${MASIF_PYTHON:-python}
 
 
 # Move to output directory
 mkdir -p $OUTDIR
 cd $OUTDIR
+
+# Targets are shared between runs. The marker is only written after every
+# preprocessing stage succeeds, so repeated jobs can safely reuse the cache.
+CACHE_MARKER="$OUTDIR/targets/$NAME_CHAIN/.masif_mimicry_complete"
+CACHE_LOCK_ROOT="$OUTDIR/.locks"
+CACHE_LOCK="$CACHE_LOCK_ROOT/$NAME_CHAIN"
+mkdir -p "$CACHE_LOCK_ROOT"
+
+if [ -f "$CACHE_MARKER" ]; then
+    echo "[INFO] Reusing preprocessed target: $OUTDIR/targets/$NAME_CHAIN"
+    exit 0
+fi
+
+if ! mkdir "$CACHE_LOCK" 2>/dev/null; then
+    echo "[INFO] Another process is preparing $NAME_CHAIN; waiting for it to finish."
+    while [ -d "$CACHE_LOCK" ] && [ ! -f "$CACHE_MARKER" ]; do
+        sleep 5
+    done
+    if [ -f "$CACHE_MARKER" ]; then
+        echo "[INFO] Reusing preprocessed target: $OUTDIR/targets/$NAME_CHAIN"
+        exit 0
+    fi
+    echo "[ERROR] Target preprocessing ended without a completion marker." >&2
+    exit 1
+fi
+trap 'rmdir "$CACHE_LOCK" 2>/dev/null || true' EXIT
 
 # create directories
 mkdir -p data_preparation/00-raw_pdbs/
@@ -111,11 +138,11 @@ cp $PDBFILE data_preparation/00-raw_pdbs/$PDB_ID\.pdb
 
 if [ -z $CHAIN2 ]; then
   echo "[INFO] Single chain detected: $CHAIN1"
-  python -W ignore $MASIF_SOURCE/data_preparation/01-pdb_extract_and_triangulate.py $PDB_ID\_$CHAIN1 $LIGAND $SDFFILE $MOL2FILE
+  "$MASIF_PYTHON" -W ignore $MASIF_SOURCE/data_preparation/01-pdb_extract_and_triangulate.py $PDB_ID\_$CHAIN1 $LIGAND $SDFFILE $MOL2FILE
 else
   echo "[INFO] PPI pair detected: $CHAIN1 and $CHAIN2"
-  python -W ignore $MASIF_SOURCE/data_preparation/01-pdb_extract_and_triangulate.py $PDB_ID\_$CHAIN1 $LIGAND $SDFFILE $MOL2FILE
-  python -W ignore $MASIF_SOURCE/data_preparation/01-pdb_extract_and_triangulate.py $PDB_ID\_$CHAIN2 $LIGAND $SDFFILE $MOL2FILE
+  "$MASIF_PYTHON" -W ignore $MASIF_SOURCE/data_preparation/01-pdb_extract_and_triangulate.py $PDB_ID\_$CHAIN1 $LIGAND $SDFFILE $MOL2FILE
+  "$MASIF_PYTHON" -W ignore $MASIF_SOURCE/data_preparation/01-pdb_extract_and_triangulate.py $PDB_ID\_$CHAIN2 $LIGAND $SDFFILE $MOL2FILE
 fi
 
 return_code=$?
@@ -124,7 +151,7 @@ echo "[INFO] 1 - Finished triangulation."
 # Run MaSIF
 if [ $return_code -eq 0 ]; then
     echo "[INFO] 2 - Precomputing masif site features..."
-    python $MASIF_SOURCE/data_preparation/04-masif_precompute.py masif_site $PPI_PAIR_ID
+    "$MASIF_PYTHON" $MASIF_SOURCE/data_preparation/04-masif_precompute.py masif_site $PPI_PAIR_ID
     return_code=$?
 fi
 
@@ -132,7 +159,7 @@ if [ $return_code -eq 0 ]; then
     echo "[INFO] 2 - Finished precomputing masif site features."
     
     echo "[INFO] 3 - Precomputing masif ppi search features..."
-    python $MASIF_SOURCE/data_preparation/04-masif_precompute.py masif_ppi_search $PPI_PAIR_ID
+    "$MASIF_PYTHON" $MASIF_SOURCE/data_preparation/04-masif_precompute.py masif_ppi_search $PPI_PAIR_ID
     return_code=$?
 fi
 
@@ -141,7 +168,7 @@ if [ $return_code -eq 0 ]; then
     echo "[INFO] 3 - Finished precomputing masif ppi search features."
 
     echo "[INFO] 4 - Running masif site..."
-    python -W ignore $MASIF_SOURCE/masif_site/masif_site_predict.py nn_models.all_feat_3l.custom_params $NAME_CHAIN
+    "$MASIF_PYTHON" -W ignore $MASIF_SOURCE/masif_site/masif_site_predict.py nn_models.all_feat_3l.custom_params $NAME_CHAIN
     return_code=$?
 fi
 
@@ -151,7 +178,7 @@ if [ $return_code -eq 0 ]; then
 
     echo "[INFO] 5 - Labeling surface with masif site..."
     export PYTHONPATH=$PYTHONPATH:$MASIF_DATA/masif_site/
-    python -W ignore $MASIF_SOURCE/masif_site/masif_site_label_surface.py nn_models.all_feat_3l.custom_params $NAME_CHAIN
+    "$MASIF_PYTHON" -W ignore $MASIF_SOURCE/masif_site/masif_site_label_surface.py nn_models.all_feat_3l.custom_params $NAME_CHAIN
     return_code=$?
 fi
 
@@ -161,7 +188,7 @@ if [ $return_code -eq 0 ]; then
 
     echo "[INFO] 6 - Computing descriptors..."
     export PYTHONPATH=$PYTHONPATH:$MASIF_DATA/masif_ppi_search/
-    python $MASIF_SOURCE/masif_ppi_search/masif_ppi_search_comp_desc.py nn_models.sc05.all_feat.custom_params $NAME_CHAIN
+    "$MASIF_PYTHON" $MASIF_SOURCE/masif_ppi_search/masif_ppi_search_comp_desc.py nn_models.sc05.all_feat.custom_params $NAME_CHAIN
     return_code=$?
 fi
 
@@ -169,9 +196,15 @@ fi
 if [ $return_code -eq 0 ]; then
     echo "[INFO] 6 - Finished computing descriptors."
 
-    mkdir -p targets
-    cp -r $MASIF_TARGETS_DIR/targets/template/ targets/$NAME_CHAIN
+    mkdir -p "targets/$NAME_CHAIN"
+    cp -r "$MASIF_TARGETS_DIR/targets/template/." "targets/$NAME_CHAIN/"
+    touch "$CACHE_MARKER"
     echo "[INFO] 7 - Created directory with files required for mimicry search: $OUTDIR/targets/$NAME_CHAIN"
+fi
+
+if [ $return_code -ne 0 ]; then
+    echo "[ERROR] Target preprocessing failed with exit code $return_code" >&2
+    exit $return_code
 fi
 
 # return to previous directory

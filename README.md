@@ -330,7 +330,10 @@ masif-mimicry run \
 ```
 
 The launcher handles Apptainer mounts, deterministic sharding, Slurm-script
-generation, validation, and `sbatch`. No host Python environment or manual
+generation, validation, and `sbatch` only when `runtime.submit: true`.
+With `submit` omitted or false, it prepares and validates the script without
+submitting; `--dry-run` prevents submission even when `submit` is true.
+No host Python environment or manual
 `apptainer exec` command is required. Useful follow-up commands are:
 
 ```bash

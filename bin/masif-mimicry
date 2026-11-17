@@ -7,7 +7,8 @@ Usage: masif-mimicry run [--dry-run] JOB.yaml
        masif-mimicry status RUN_DIRECTORY
 
 Prepare a Slurm run through the MaSIF-mimicry SIF and submit it with the
-host's sbatch command, run a local job through Apptainer or Docker, or show
+host's sbatch command only when runtime.submit is true (unless --dry-run),
+run a local job through Apptainer or Docker, or show
 progress for an existing run. Set MIMICRY_IMAGE or MIMICRY_DOCKER_IMAGE to
 override the default images.
 EOF
@@ -115,6 +116,7 @@ command -v apptainer >/dev/null || {
 }
 
 read_config='import pathlib, sys, yaml
+from pydantic import TypeAdapter
 job = pathlib.Path(sys.argv[1]).resolve()
 raw = yaml.safe_load(job.read_text())
 base = job.parent
@@ -126,6 +128,7 @@ print(absolute(runtime["suite_root"]))
 print(absolute(runtime.get("image") or sys.argv[2]))
 print(absolute(raw.get("output_root", "runs")) / raw["name"])
 print(runtime.get("backend", "slurm"))
+print(str(TypeAdapter(bool).validate_python(runtime.get("submit", False))).lower())
 for path in runtime.get("binds", []):
     print(absolute(path))'
 
@@ -146,7 +149,8 @@ suite_root=${config_values[0]}
 runtime_image=${config_values[1]}
 run_dir=${config_values[2]}
 backend=${config_values[3]}
-additional_binds=("${config_values[@]:4}")
+submit=${config_values[4]}
+additional_binds=("${config_values[@]:5}")
 
 [[ -f $runtime_image ]] || {
     echo "Configured container image not found: $runtime_image" >&2
@@ -201,10 +205,6 @@ if [[ $dry_run == true ]]; then
     exit 0
 fi
 
-command -v sbatch >/dev/null || {
-    echo "Slurm sbatch was not found on the host." >&2
-    exit 1
-}
 [[ -f $run_dir/submit.slurm ]] || {
     echo "Generated Slurm script not found: $run_dir/submit.slurm" >&2
     exit 1
@@ -213,5 +213,13 @@ command -v sbatch >/dev/null || {
 (
     cd "$run_dir"
     bash -n submit.slurm
+    if [[ $submit != true ]]; then
+        echo "Prepared without submission: $run_dir/submit.slurm"
+        exit 0
+    fi
+    command -v sbatch >/dev/null || {
+        echo "Slurm sbatch was not found on the host." >&2
+        exit 1
+    }
     sbatch submit.slurm
 )

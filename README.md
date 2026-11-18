@@ -4,7 +4,7 @@ MaSIF-mimicry searches protein surfaces for patches that resemble a target inter
 
 ![MaSIF-mimicry overview and pipeline](img/masif_mimicry.jpg)
 
-## Get started
+## Getting started
 
 The everyday workflow is simple: choose a job file, run it, and check the results.
 The launcher handles container mounts and, for cluster jobs, generates the Slurm
@@ -49,7 +49,7 @@ Find outputs in the run directory selected by your job file. See
 For interrupted Slurm array scans, repeat the same run command; completed shards
 are skipped.
 
-## Need more detail?
+## More detailed guidelines
 
 | Task | Guide |
 | --- | --- |
